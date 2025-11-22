@@ -1,4 +1,8 @@
-//! Utilities to support MeCab models.
+//! MeCab形式のファイル処理を行うためのユーティリティモジュール
+//!
+//! このモジュールは、MeCabモデルとの互換性を提供するための機能を含んでいます。
+//! MeCab形式のファイル(feature.def、left-id.def、right-id.def、model.def等)の
+//! 読み込みと書き込みを行い、バイグラム情報の生成などをサポートします。
 
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
@@ -9,24 +13,36 @@ use crate::errors::{Result, VibratoError};
 use crate::trainer::TrainerConfig;
 use crate::utils;
 
-/// Generates bi-gram feature information from MeCab model.
+/// MeCabモデルからバイグラム素性情報を生成します。
 ///
-/// This function is useful to create a small dictionary from an existing MeCab model.
+/// この関数は、既存のMeCabモデルから小さな辞書を作成するのに便利です。
+/// MeCab形式の各種定義ファイルを読み込み、バイグラム情報を抽出して
+/// 新しいファイル形式に変換します。
 ///
-/// # Arguments
+/// # 引数
 ///
-/// * `feature_def_rdr` - A reader of the feature definition file `feature.def`.
-/// * `left_id_def_rdr` - A reader of the left-id and feature mapping file `left-id.def`.
-/// * `right_id_def_rdr` - A reader of the right-id and feature mapping file `right-id.def`
-/// * `model_def_rdr` - A reader of the model file `model.def`.
-/// * `cost_factor` - A factor to be multiplied when casting costs to integers.
-/// * `bigram_left_wtr` - A writer of the left-id and feature mapping file `bi-gram.left`.
-/// * `bigram_right_wtr` - A writer of the right-id and feature mapping file `bi-gram.right`.
-/// * `bigram_cost_wtr` - A writer of the bi-gram cost file `bi-gram.cost`.
+/// * `feature_def_rdr` - 素性定義ファイル `feature.def` のリーダー
+/// * `left_id_def_rdr` - 左IDと素性のマッピングファイル `left-id.def` のリーダー
+/// * `right_id_def_rdr` - 右IDと素性のマッピングファイル `right-id.def` のリーダー
+/// * `model_def_rdr` - モデルファイル `model.def` のリーダー
+/// * `cost_factor` - コストを整数にキャストする際に乗算される係数
+/// * `bigram_left_wtr` - バイグラム左側情報ファイル `bi-gram.left` のライター
+/// * `bigram_right_wtr` - バイグラム右側情報ファイル `bi-gram.right` のライター
+/// * `bigram_cost_wtr` - バイグラムコストファイル `bi-gram.cost` のライター
 ///
-/// # Errors
+/// # 戻り値
 ///
-/// [`VibratoError`] is returned when the convertion failed.
+/// 正常に処理が完了した場合は `Ok(())` を返します。
+///
+/// # エラー
+///
+/// 変換に失敗した場合は [`VibratoError`] が返されます。
+/// 以下の場合にエラーが発生する可能性があります:
+///
+/// * 入力ファイルの形式が不正な場合
+/// * ID 0 が BOS/EOS でない場合
+/// * 素性IDが未定義の場合
+/// * ファイルの読み書き中にI/Oエラーが発生した場合
 #[allow(clippy::too_many_arguments)]
 pub fn generate_bigram_info(
     feature_def_rdr: impl Read,

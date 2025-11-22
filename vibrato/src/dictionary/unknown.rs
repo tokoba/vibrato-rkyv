@@ -1,3 +1,8 @@
+//! 未知語処理
+//!
+//! このモジュールは、辞書に登録されていない未知語を処理するための
+//! ハンドラーを提供します。
+
 use std::io::Read;
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -17,6 +22,7 @@ use crate::utils;
 
 use crate::common::MAX_SENTENCE_LENGTH;
 
+/// 未知語エントリ
 #[derive(Default, Debug, Clone, PartialEq, Eq, Archive, Serialize, Deserialize)]
 pub struct UnkEntry {
     pub cate_id: u16,
@@ -26,6 +32,7 @@ pub struct UnkEntry {
     pub feature: String,
 }
 
+/// 未知語の情報
 #[derive(Default, Debug, Clone)]
 pub struct UnkWord {
     start_char: usize,
@@ -58,7 +65,7 @@ impl UnkWord {
     }
 }
 
-/// Handler of unknown words.
+/// 未知語を処理するハンドラー
 #[derive(Archive, Deserialize, Serialize)]
 pub struct UnkHandler {
     offsets: Vec<usize>, // indexed by category id
@@ -66,6 +73,15 @@ pub struct UnkHandler {
 }
 
 impl UnkHandler {
+    /// 未知語を生成します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 文
+    /// * `start_char` - 開始文字位置
+    /// * `has_matched` - マッチした単語があるかどうか
+    /// * `max_grouping_len` - グループ化の最大長
+    /// * `f` - 生成された未知語を処理するクロージャ
     pub fn gen_unk_words<F>(
         &self,
         sent: &Sentence,
@@ -136,9 +152,9 @@ impl UnkHandler {
         f
     }
 
-    /// Returns the earliest occurrence of compatible unknown words for the given word.
+    /// 指定された単語に互換性のある未知語の最初の出現を返します。
     ///
-    /// Returns `None` if no compatible entry exists.
+    /// 互換性のあるエントリが存在しない場合は `None` を返します。
     #[cfg(feature = "train")]
     pub fn compatible_unk_index(
         &self,
@@ -200,9 +216,12 @@ impl UnkHandler {
         self.entries.len()
     }
 
-    /// Do NOT make this function public to maintain consistency in
-    /// the connection-id mapping among members of `Dictionary`.
-    /// The consistency is managed in `Dictionary`.
+    /// 接続IDをマッピングします。
+    ///
+    /// # 注意
+    ///
+    /// `Dictionary` のメンバー間で接続IDマッピングの一貫性を保つため、
+    /// この関数は公開しないでください。一貫性は `Dictionary` で管理されます。
     pub fn map_connection_ids(&mut self, mapper: &ConnIdMapper) {
         for e in &mut self.entries {
             e.left_id = mapper.left(e.left_id);
@@ -210,7 +229,15 @@ impl UnkHandler {
         }
     }
 
-    /// Checks if left/right-ids are valid to the connector.
+    /// 左右IDがコネクターで有効かどうかをチェックします。
+    ///
+    /// # 引数
+    ///
+    /// * `conn` - コネクター
+    ///
+    /// # 戻り値
+    ///
+    /// すべてのIDが有効な場合は `true`
     pub fn verify<C>(&self, conn: &C) -> bool
     where
         C: Connector,
@@ -226,7 +253,20 @@ impl UnkHandler {
         true
     }
 
-    /// Creates a new instance from `unk.def`.
+    /// `unk.def` ファイルから新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - `unk.def` ファイルのリーダー
+    /// * `char_prop` - 文字プロパティ
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(UnkHandler)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_reader<R>(mut rdr: R, char_prop: &CharProperty) -> Result<Self>
     where
         R: Read,

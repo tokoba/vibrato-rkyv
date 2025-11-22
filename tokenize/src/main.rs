@@ -1,3 +1,8 @@
+//! 形態素解析を実行するユーティリティ
+//!
+//! このバイナリは、標準入力から読み込んだテキストを形態素解析し、
+//! 指定された出力形式（mecab、wakati、detail）で結果を出力します。
+
 use std::error::Error;
 use std::io::{BufRead, BufWriter, Write};
 use std::path::PathBuf;
@@ -8,6 +13,7 @@ use vibrato_rkyv::{CacheStrategy, Tokenizer};
 
 use clap::Parser;
 
+/// 出力モード
 #[derive(Clone, Debug)]
 enum OutputMode {
     Mecab,
@@ -15,8 +21,19 @@ enum OutputMode {
     Detail,
 }
 
+/// `OutputMode` の `FromStr` 実装
 impl FromStr for OutputMode {
     type Err = &'static str;
+
+    /// 文字列から出力モードをパースする
+    ///
+    /// # 引数
+    ///
+    /// * `mode` - パース対象の文字列（"mecab"、"wakati"、"detail"のいずれか）
+    ///
+    /// # 戻り値
+    ///
+    /// パースに成功した場合は対応する `OutputMode`、失敗した場合はエラーメッセージ
     fn from_str(mode: &str) -> Result<Self, Self::Err> {
         match mode {
             "mecab" => Ok(Self::Mecab),
@@ -27,6 +44,7 @@ impl FromStr for OutputMode {
     }
 }
 
+/// コマンドライン引数
 #[derive(Parser, Debug)]
 #[clap(name = "tokenize", about = "Predicts morphemes")]
 struct Args {
@@ -47,6 +65,14 @@ struct Args {
     max_grouping_len: Option<usize>,
 }
 
+/// メイン関数
+///
+/// 辞書をロードし、標準入力から読み込んだテキストを形態素解析して、
+/// 指定された形式で結果を標準出力に出力します。
+///
+/// # 戻り値
+///
+/// 実行が成功した場合は `Ok(())`、エラーが発生した場合はエラー情報
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 

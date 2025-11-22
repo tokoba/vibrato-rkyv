@@ -1,3 +1,7 @@
+//! トレーナーの設定モジュール。
+//!
+//! このモジュールは、形態素解析モデルの学習に必要な設定を管理します。
+
 use std::io::{BufRead, BufReader, Read};
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -11,7 +15,9 @@ use crate::errors::{Result, VibratoError};
 use crate::trainer::feature_extractor::FeatureExtractor;
 use crate::trainer::feature_rewriter::{FeatureRewriter, FeatureRewriterBuilder};
 
-/// Configuration for a trainer.
+/// トレーナーの設定。
+///
+/// 素性抽出器、素性書き換え器、辞書、表層形のリストを保持します。
 #[derive(Archive, Serialize, Deserialize)]
 pub struct TrainerConfig {
     pub(crate) feature_extractor: FeatureExtractor,
@@ -23,6 +29,21 @@ pub struct TrainerConfig {
 }
 
 impl TrainerConfig {
+    /// 素性設定ファイルを解析します。
+    ///
+    /// feature.def ファイルから UNIGRAM と BIGRAM のテンプレートを読み込みます。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - 素性設定ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 素性抽出器
+    ///
+    /// # エラー
+    ///
+    /// ファイル形式が不正な場合、[`VibratoError`] が返されます。
     pub(crate) fn parse_feature_config<R>(rdr: R) -> Result<FeatureExtractor>
     where
         R: Read,
@@ -62,6 +83,21 @@ impl TrainerConfig {
         Ok(FeatureExtractor::new(&unigram_templates, &bigram_templates))
     }
 
+    /// 書き換えルールを解析します。
+    ///
+    /// 行を解析し、パターンと書き換え文字列のペアを抽出します。
+    ///
+    /// # 引数
+    ///
+    /// * `line` - 書き換えルールの行
+    ///
+    /// # 戻り値
+    ///
+    /// パターンと書き換え文字列のタプル
+    ///
+    /// # エラー
+    ///
+    /// ルールの形式が不正な場合、[`VibratoError`] が返されます。
     fn parse_rewrite_rule(line: &str) -> Result<(Vec<&str>, Vec<&str>)> {
         let mut spl = line.split_ascii_whitespace();
         let pattern = spl.next();
@@ -77,6 +113,21 @@ impl TrainerConfig {
         }
     }
 
+    /// 書き換え設定ファイルを解析します。
+    ///
+    /// rewrite.def ファイルから unigram、left、right の書き換えルールを読み込みます。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - 書き換え設定ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// (unigram書き換え器, left書き換え器, right書き換え器) のタプル
+    ///
+    /// # エラー
+    ///
+    /// ファイル形式が不正な場合、[`VibratoError`] が返されます。
     fn parse_rewrite_config<R>(
         rdr: R,
     ) -> Result<(FeatureRewriter, FeatureRewriter, FeatureRewriter)>
@@ -123,17 +174,23 @@ impl TrainerConfig {
         ))
     }
 
-    /// Loads a training configuration from readers.
+    /// リーダーから学習設定を読み込みます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `feature_templates_rdr` - A reader of the feature definition file `feature.def`.
-    /// * `rewrite_rules_rdr` - A reader of the rewrite definition file `rewrite.def`.
-    /// * `char_prop_rdr` - A reader of the character definition file `char.def`.
+    /// * `lexicon_rdr` - 辞書ファイル `lex.csv` のリーダー
+    /// * `char_prop_rdr` - 文字定義ファイル `char.def` のリーダー
+    /// * `unk_handler_rdr` - 未知語ハンドラファイル `unk.def` のリーダー
+    /// * `feature_templates_rdr` - 素性定義ファイル `feature.def` のリーダー
+    /// * `rewrite_rules_rdr` - 書き換え定義ファイル `rewrite.def` のリーダー
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// [`VibratoError`] is returned when an input format is invalid.
+    /// 学習設定
+    ///
+    /// # エラー
+    ///
+    /// 入力形式が不正な場合、[`VibratoError`] が返されます。
     pub fn from_readers<L, C, U, F, R>(
         mut lexicon_rdr: L,
         char_prop_rdr: C,

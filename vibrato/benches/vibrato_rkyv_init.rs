@@ -1,3 +1,9 @@
+//! Vibrato-rkyv辞書の読み込みベンチマーク
+//!
+//! rkyv形式のVibrato辞書ファイルの読み込み速度を計測します。
+//! from_path、from_path_unchecked、from_zstdなどの各種読み込み方法を、
+//! ウォームキャッシュ、コールドキャッシュ、初回実行時の3つの状態で測定します。
+
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use tempfile::TempDir;
 use vibrato_rkyv::dictionary::GLOBAL_CACHE_DIR;

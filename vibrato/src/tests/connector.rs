@@ -2,6 +2,7 @@ use crate::dictionary::connector::*;
 
 const MATRIX_DEF: &str = include_str!("./resources/matrix.def");
 
+/// 接続コスト行列の読み込みと取得機能のテスト
 #[test]
 fn test_matrix() {
     let conn = MatrixConnector::from_reader(MATRIX_DEF.as_bytes()).unwrap();

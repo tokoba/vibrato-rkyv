@@ -1,3 +1,7 @@
+//! プリセット辞書のダウンロード機能
+//!
+//! このモジュールは、プリセット辞書をダウンロードして検証する機能を提供します。
+
 #![cfg(feature = "download")]
 use std::{fs::{self, File}, io::{self, Seek, SeekFrom}, path::{Path, PathBuf}};
 
@@ -8,6 +12,20 @@ use xz2::read::XzDecoder;
 
 use crate::{dictionary::{PresetDictionaryKind, config::FileType}, errors::DownloadError};
 
+/// 辞書をダウンロードして指定されたディレクトリに保存します。
+///
+/// # 引数
+///
+/// * `kind` - ダウンロードする辞書の種類
+/// * `dest_dir` - 保存先ディレクトリ
+///
+/// # 戻り値
+///
+/// 成功時はダウンロードされた辞書ファイルのパスを返します。
+///
+/// # エラー
+///
+/// ダウンロードや検証に失敗した場合にエラーを返します。
 pub(crate) fn download_dictionary<P: AsRef<Path>>(kind: PresetDictionaryKind, dest_dir: P) -> Result<PathBuf, DownloadError> {
     let preset_meta = kind.meta();
     let dest_dir = dest_dir.as_ref();

@@ -1,3 +1,8 @@
+//! 並び替えマッピングを生成するユーティリティ
+//!
+//! このバイナリは、標準入力から読み込んだテキストに基づいて
+//! 接続IDの使用頻度を計算し、並び替えマッピングファイル（lmap、rmap）を生成します。
+
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufWriter, Write};
@@ -8,6 +13,7 @@ use vibrato_rkyv::Tokenizer;
 
 use clap::Parser;
 
+/// コマンドライン引数
 #[derive(Parser, Debug)]
 #[clap(name = "reorder", about = "A program to produce reordered mapping.")]
 struct Args {
@@ -21,6 +27,14 @@ struct Args {
     mapping_out: PathBuf,
 }
 
+/// メイン関数
+///
+/// 辞書をロードし、標準入力から読み込んだテキストをトークン化して
+/// 接続IDの使用頻度を計算し、並び替えマッピングファイルを出力します。
+///
+/// # 戻り値
+///
+/// 実行が成功した場合は `Ok(())`、エラーが発生した場合はエラー情報
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 

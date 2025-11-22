@@ -1,3 +1,8 @@
+//! 辞書学習器のテスト
+//!
+//! コーパスから辞書を学習する機能をテストします。
+//! 出力される辞書ファイル(lex.csv、matrix.def、unk.def等)の形式が正しいことを検証します。
+
 use std::io::BufRead;
 
 use crate::trainer::{Corpus, Trainer, TrainerConfig};
@@ -11,6 +16,7 @@ const FEATURE_DEF: &[u8] = include_bytes!("./resources/feature.def");
 const CORPUS_TXT: &[u8] = include_bytes!("./resources/corpus.txt");
 const USER_CSV: &[u8] = include_bytes!("./resources/user.csv");
 
+/// 学習後の辞書ファイル(lex.csv)の形式が正しいことを確認
 #[test]
 fn test_lexicon_format() {
     let config = TrainerConfig::from_readers(
@@ -66,6 +72,7 @@ fn test_lexicon_format() {
     }
 }
 
+/// 学習後の未知語定義ファイル(unk.def)の形式が正しいことを確認
 #[test]
 fn test_unk_format() {
     let config = TrainerConfig::from_readers(
@@ -139,6 +146,7 @@ fn test_unk_format() {
     }
 }
 
+/// 学習後の接続コスト行列ファイル(matrix.def)の形式が正しいことを確認
 #[test]
 fn test_matrix_format() {
     let config = TrainerConfig::from_readers(
@@ -185,6 +193,7 @@ fn test_matrix_format() {
     }
 }
 
+/// ユーザー辞書ファイルの形式が正しいことを確認
 #[test]
 fn test_user_lex_format() {
     let config = TrainerConfig::from_readers(

@@ -1,8 +1,13 @@
+//! プリセット辞書の設定
+//!
+//! このモジュールは、手動設定なしで使用できるプリセット辞書の種類と
+//! メタデータを定義します。
+
 #![cfg(feature = "download")]
 
 use std::fmt;
 
-/// Represents a preset dictionary that can be used without manual configuration.
+/// 手動設定なしで使用できるプリセット辞書の種類を表します。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PresetDictionaryKind {
     /// MeCab IPADIC v2.7.0
@@ -42,6 +47,7 @@ pub enum PresetDictionaryKind {
 }
 
 impl PresetDictionaryKind {
+    /// 辞書のメタデータを取得します。
     pub(crate) fn meta(&self) -> &'static DictionaryMeta {
         use PresetDictionaryKind::*;
 
@@ -73,6 +79,7 @@ impl PresetDictionaryKind {
         }
     }
 
+    /// 辞書の名前を取得します。
     pub fn name(&self) -> &'static str {
         self.meta().name
     }
@@ -167,6 +174,7 @@ pub(crate) static BCCWJ_UNIDIC_CWJ_EXTRACTED_COMPACT_DUAL: DictionaryMeta = Dict
     sha256_hash_comp_dict: "8b3539626d14a7393c95e46704c213cf01cb8a1d8bf42be9dfdfbabbcdd1abfb",
 };
 
+/// 辞書のメタデータ
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct DictionaryMeta {
     pub name: &'static str,
@@ -182,9 +190,12 @@ impl fmt::Display for PresetDictionaryKind {
     }
 }
 
+/// アーカイブファイルの種類
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum FileType {
+    /// Tar形式
     Tar,
+    /// Tar+XZ圧縮形式
     #[allow(unused)]
     TarXz,
 }

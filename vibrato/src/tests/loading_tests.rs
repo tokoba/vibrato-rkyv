@@ -1,3 +1,8 @@
+//! 辞書の読み込み機能に関するテスト
+//!
+//! 様々な形式(zstd圧縮、rkyv、レガシー形式)の辞書ファイルの読み込みと、
+//! キャッシュ機能の動作を検証します。
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -120,6 +125,7 @@ impl Default for TestEnv {
     }
 }
 
+/// zstd圧縮されたrkyv辞書からローカルキャッシュが作成されることを確認
 #[test]
 fn test_from_zstd_rkyv_creates_local_cache() {
     let env = TestEnv::new();
@@ -134,6 +140,7 @@ fn test_from_zstd_rkyv_creates_local_cache() {
     assert!(matches!(dict, Dictionary::Archived(_)));
 }
 
+/// レガシー形式の辞書がrkyv形式に変換されキャッシュされることを確認
 #[test]
 #[cfg(feature = "legacy")]
 fn test_from_zstd_legacy_converts_and_caches_as_rkyv() {
@@ -152,6 +159,7 @@ fn test_from_zstd_legacy_converts_and_caches_as_rkyv() {
     assert!(matches!(dict_rkyv_from_cache, Dictionary::Archived(_)));
 }
 
+/// TrustCacheモードでの辞書読み込みとキャッシュ動作のテスト
 #[test]
 fn test_from_path_trustcache_flow() {
     let env = TestEnv::new();
@@ -174,6 +182,7 @@ fn test_from_path_trustcache_flow() {
     assert!(result_corrupted.is_err());
 }
 
+/// Validateモードでの辞書読み込みテスト
 #[test]
 fn test_from_path_validate_mode() {
     let env = TestEnv::new();

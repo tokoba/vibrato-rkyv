@@ -1,3 +1,8 @@
+//! モデルの精度を評価するユーティリティ
+//!
+//! このバイナリは、訓練済みの形態素解析モデルの精度を評価します。
+//! テストコーパスと比較して、適合率（Precision）、再現率（Recall）、F1スコアを計算します。
+
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::File;
@@ -10,6 +15,7 @@ use vibrato_rkyv::{CacheStrategy, Tokenizer};
 
 use clap::Parser;
 
+/// コマンドライン引数
 #[derive(Parser, Debug)]
 #[clap(name = "evaluate", about = "Evaluate the model accuracy")]
 struct Args {
@@ -33,6 +39,15 @@ struct Args {
     feature_indices: Vec<usize>,
 }
 
+/// CSV行をパースして素性のベクトルに変換する
+///
+/// # 引数
+///
+/// * `row` - パース対象のCSV行文字列
+///
+/// # 戻り値
+///
+/// パースされた素性の文字列ベクトル
 fn parse_csv_row(row: &str) -> Vec<String> {
     let mut features = vec![];
     let mut rdr = csv_core::Reader::new();
@@ -54,6 +69,14 @@ fn parse_csv_row(row: &str) -> Vec<String> {
     features
 }
 
+/// メイン関数
+///
+/// テストコーパスに対してトークナイザを実行し、正解データと比較して
+/// 適合率、再現率、F1スコアを計算します。
+///
+/// # 戻り値
+///
+/// 実行が成功した場合は `Ok(())`、エラーが発生した場合はエラー情報
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 

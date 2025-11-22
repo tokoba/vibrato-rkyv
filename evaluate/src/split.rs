@@ -1,9 +1,23 @@
+//! コーパスをシャッフルして訓練、検証、テストデータに分割するユーティリティ
+//!
+//! このバイナリは、入力されたコーパスをランダムにシャッフルし、
+//! 指定された比率で訓練データ、検証データ、テストデータに分割します。
+
 use std::path::PathBuf;
 
 use clap::{error::ErrorKind, CommandFactory, Parser};
 use rand::seq::SliceRandom;
 use vibrato_rkyv::trainer::Corpus;
 
+/// 比率文字列をパースする
+///
+/// # 引数
+///
+/// * `val` - パース対象の文字列（0.0から1.0の範囲の浮動小数点数）
+///
+/// # 戻り値
+///
+/// パースに成功した場合は `Ok(f64)`、失敗した場合はエラーメッセージ
 fn parse_ratio(val: &str) -> Result<f64, String> {
     let val = val.parse::<f64>().map_err(|e| e.to_string())?;
     if (0.0..=1.0).contains(&val) {
@@ -13,6 +27,7 @@ fn parse_ratio(val: &str) -> Result<f64, String> {
     }
 }
 
+/// コマンドライン引数
 #[derive(Parser, Debug)]
 #[clap(
     name = "split",
@@ -44,6 +59,14 @@ struct Args {
     test_ratio: f64,
 }
 
+/// メイン関数
+///
+/// コーパスをロードし、ランダムにシャッフルした後、
+/// 指定された比率で訓練、検証、テストデータに分割して出力します。
+///
+/// # 戻り値
+///
+/// 実行が成功した場合は `Ok(())`、エラーが発生した場合はエラー情報
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 

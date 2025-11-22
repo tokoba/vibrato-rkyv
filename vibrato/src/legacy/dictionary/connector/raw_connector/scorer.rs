@@ -1,3 +1,8 @@
+//! スコアラー実装
+//!
+//! このモジュールは、接続コストを計算するためのスコアラーと
+//! SIMD最適化された数値型を提供します。
+
 #[cfg(target_feature = "avx2")]
 use std::arch::x86_64::{self, __m256i};
 
@@ -10,11 +15,19 @@ use bincode::{
 
 use crate::legacy::num::U31;
 
-
+/// SIMDベクトルのサイズ（8要素）
 pub const SIMD_SIZE: usize = 8;
+
+/// 8個のU31値をまとめたSIMDベクトル型
+///
+/// AVX2が利用可能な場合は`__m256i`を、そうでない場合は配列を使用します。
 #[cfg(not(target_feature = "avx2"))]
 #[derive(Clone, Copy)]
 pub struct U31x8([U31; SIMD_SIZE]);
+
+/// 8個のU31値をまとめたSIMDベクトル型（AVX2版）
+///
+/// AVX2命令セットを使用して高速な並列計算を実現します。
 #[cfg(target_feature = "avx2")]
 #[derive(Clone, Copy)]
 pub struct U31x8(__m256i);
@@ -71,13 +84,22 @@ impl Encode for U31x8 {
     }
 }
 
+/// 接続コストスコアラー
+///
+/// この構造体は、特徴IDから接続コストを計算するためのデータと
+/// SIMD最適化されたルックアップ機構を提供します。
 pub struct Scorer {
+    /// ベース値の配列
     bases: Vec<u32>,
+    /// チェック値の配列
     checks: Vec<u32>,
+    /// コスト値の配列
     costs: Vec<i32>,
 
+    /// ベース配列の長さ（AVX2最適化用）
     #[cfg(target_feature = "avx2")]
     bases_len: __m256i,
+    /// チェック配列の長さ（AVX2最適化用）
     #[cfg(target_feature = "avx2")]
     checks_len: __m256i,
 }

@@ -1,4 +1,6 @@
-//! Utilities to support MeCab models.
+//! MeCabモデルサポートユーティリティ
+//!
+//! このモジュールは、MeCabモデルとの互換性を提供するためのユーティリティ関数を提供します。
 
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
@@ -9,24 +11,34 @@ use crate::errors::{Result, VibratoError};
 use crate::trainer::TrainerConfig;
 use crate::utils;
 
-/// Generates bi-gram feature information from MeCab model.
+/// MeCabモデルからバイグラム特徴情報を生成します。
 ///
-/// This function is useful to create a small dictionary from an existing MeCab model.
+/// この関数は、既存のMeCabモデルから小さな辞書を作成する際に便利です。
+/// MeCab形式の辞書ファイルを読み込み、Vibratoで使用可能なバイグラム特徴情報を
+/// 出力します。
 ///
-/// # Arguments
+/// # 引数
 ///
-/// * `feature_def_rdr` - A reader of the feature definition file `feature.def`.
-/// * `left_id_def_rdr` - A reader of the left-id and feature mapping file `left-id.def`.
-/// * `right_id_def_rdr` - A reader of the right-id and feature mapping file `right-id.def`
-/// * `model_def_rdr` - A reader of the model file `model.def`.
-/// * `cost_factor` - A factor to be multiplied when casting costs to integers.
-/// * `bigram_left_wtr` - A writer of the left-id and feature mapping file `bi-gram.left`.
-/// * `bigram_right_wtr` - A writer of the right-id and feature mapping file `bi-gram.right`.
-/// * `bigram_cost_wtr` - A writer of the bi-gram cost file `bi-gram.cost`.
+/// * `feature_def_rdr` - 特徴定義ファイル`feature.def`のリーダー
+/// * `left_id_def_rdr` - 左ID-特徴マッピングファイル`left-id.def`のリーダー
+/// * `right_id_def_rdr` - 右ID-特徴マッピングファイル`right-id.def`のリーダー
+/// * `model_def_rdr` - モデルファイル`model.def`のリーダー
+/// * `cost_factor` - コストを整数にキャストする際に乗算される係数
+/// * `bigram_left_wtr` - 左ID-特徴マッピングファイル`bi-gram.left`のライター
+/// * `bigram_right_wtr` - 右ID-特徴マッピングファイル`bi-gram.right`のライター
+/// * `bigram_cost_wtr` - バイグラムコストファイル`bi-gram.cost`のライター
 ///
-/// # Errors
+/// # 戻り値
 ///
-/// [`VibratoError`] is returned when the convertion failed.
+/// 成功時は`Ok(())`を返します。
+///
+/// # エラー
+///
+/// 変換に失敗した場合、[`VibratoError`]が返されます。
+/// 主なエラーの原因は以下の通りです：
+/// - ファイル形式が不正な場合
+/// - 必須のIDが定義されていない場合
+/// - 数値の解析に失敗した場合
 #[allow(clippy::too_many_arguments)]
 pub fn generate_bigram_info(
     feature_def_rdr: impl Read,

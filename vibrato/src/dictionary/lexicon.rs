@@ -1,3 +1,8 @@
+//! 辞書の語彙情報を管理するモジュール
+//!
+//! このモジュールは、単語の表層形、パラメータ、素性情報を管理する
+//! 語彙データ構造を提供します。
+
 mod feature;
 mod map;
 mod param;
@@ -19,7 +24,7 @@ use crate::utils::FromU32;
 
 pub use crate::dictionary::lexicon::param::WordParam;
 
-/// Lexicon of words.
+/// 単語の語彙情報
 #[derive(Archive, Serialize, Deserialize)]
 pub struct Lexicon {
     map: WordMap,
@@ -29,6 +34,15 @@ pub struct Lexicon {
 }
 
 impl Lexicon {
+    /// 入力文字列の共通接頭辞に一致する単語を返すイテレータを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `input` - 入力文字列
+    ///
+    /// # 戻り値
+    ///
+    /// 一致する単語のイテレータ
     #[inline(always)]
     pub fn common_prefix_iterator<'a>(
         &'a self,
@@ -45,26 +59,55 @@ impl Lexicon {
             })
     }
 
-    /// Do NOT make this function public to maintain consistency in
-    /// the connection-id mapping among members of `Dictionary`.
-    /// The consistency is managed in `Dictionary`.
+    /// 接続IDをマッピングします。
+    ///
+    /// # 注意
+    ///
+    /// `Dictionary` のメンバー間で接続IDマッピングの一貫性を保つため、
+    /// この関数は公開しないでください。一貫性は `Dictionary` で管理されます。
     pub fn map_connection_ids(&mut self, mapper: &ConnIdMapper) {
         self.params.map_connection_ids(mapper);
     }
 
+    /// 単語のパラメータを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語インデックス
+    ///
+    /// # 戻り値
+    ///
+    /// 単語パラメータ
     #[inline(always)]
     pub fn word_param(&self, word_idx: WordIdx) -> WordParam {
         debug_assert_eq!(word_idx.lex_type, self.lex_type);
         self.params.get(usize::from_u32(word_idx.word_id))
     }
 
+    /// 単語の素性を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語インデックス
+    ///
+    /// # 戻り値
+    ///
+    /// 単語素性
     #[inline(always)]
     pub fn word_feature(&self, word_idx: WordIdx) -> &str {
         debug_assert_eq!(word_idx.lex_type, self.lex_type);
         self.features.get(usize::from_u32(word_idx.word_id))
     }
 
-    /// Checks if left/right-ids are valid with connector.
+    /// 左右IDがコネクターで有効かどうかをチェックします。
+    ///
+    /// # 引数
+    ///
+    /// * `conn` - コネクター
+    ///
+    /// # 戻り値
+    ///
+    /// すべてのIDが有効な場合は `true`
     pub fn verify<C>(&self, conn: &C) -> bool
     where
         C: Connector,
@@ -81,7 +124,20 @@ impl Lexicon {
         true
     }
 
-    /// Builds a new instance from a list of entries.
+    /// エントリのリストから新しいインスタンスを構築します。
+    ///
+    /// # 引数
+    ///
+    /// * `entries` - 単語エントリのスライス
+    /// * `lex_type` - 辞書の種類
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(Lexicon)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// 構築に失敗した場合にエラーを返します。
     pub fn from_entries(entries: &[RawWordEntry], lex_type: LexType) -> Result<Self> {
         let map = WordMap::new(entries.iter().map(|e| &e.surface))?;
         let params = WordParams::new(entries.iter().map(|e| e.param));
@@ -95,7 +151,20 @@ impl Lexicon {
         })
     }
 
-    /// Builds a new instance from a lexicon file in the CSV format.
+    /// CSV形式の辞書ファイルから新しいインスタンスを構築します。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - 辞書ファイルのリーダー
+    /// * `lex_type` - 辞書の種類
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(Lexicon)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_reader<R>(mut rdr: R, lex_type: LexType) -> Result<Self>
     where
         R: Read,
@@ -200,6 +269,7 @@ impl Lexicon {
     }
 }
 
+/// 語彙マッチング結果
 #[derive(Eq, PartialEq, Debug)]
 pub struct LexMatch {
     pub word_idx: WordIdx,
@@ -208,6 +278,7 @@ pub struct LexMatch {
 }
 
 impl LexMatch {
+    /// 新しいマッチング結果を作成します。
     #[inline(always)]
     pub const fn new(word_idx: WordIdx, word_param: WordParam, end_char: usize) -> Self {
         Self {
@@ -218,6 +289,7 @@ impl LexMatch {
     }
 }
 
+/// 生の単語エントリ
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RawWordEntry<'a> {
     pub surface: String,
@@ -226,6 +298,15 @@ pub struct RawWordEntry<'a> {
 }
 
 impl ArchivedLexicon {
+    /// 入力文字列の共通接頭辞に一致する単語を返すイテレータを取得します（アーカイブ版）。
+    ///
+    /// # 引数
+    ///
+    /// * `input` - 入力文字列
+    ///
+    /// # 戻り値
+    ///
+    /// 一致する単語のイテレータ
     #[inline(always)]
     pub fn common_prefix_iterator<'a>(
         &'a self,
@@ -242,12 +323,14 @@ impl ArchivedLexicon {
             })
     }
 
+    /// 単語のパラメータを取得します（アーカイブ版）。
     #[inline(always)]
     pub fn word_param(&self, word_idx: WordIdx) -> WordParam {
         debug_assert_eq!(word_idx.lex_type, self.lex_type);
         self.params.get(usize::from_u32(word_idx.word_id))
     }
 
+    /// 単語の素性を取得します（アーカイブ版）。
     #[inline(always)]
     pub fn word_feature(&self, word_idx: WordIdx) -> &str {
         debug_assert_eq!(word_idx.lex_type, self.lex_type);

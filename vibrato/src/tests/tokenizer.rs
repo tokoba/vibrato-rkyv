@@ -1,3 +1,8 @@
+//! 形態素解析器のテスト
+//!
+//! 様々な入力文字列に対する形態素解析の動作を検証します。
+//! 単語境界の認識、ユーザー辞書、空白処理、未知語処理などをテストします。
+
 use crate::dictionary::SystemDictionaryBuilder;
 use crate::{Dictionary, Tokenizer};
 
@@ -25,7 +30,7 @@ fn build_test_dictionary(
     Dictionary::from_inner(dict_inner)
 }
 
-
+/// 「東京都」の形態素解析テスト
 #[test]
 fn test_tokenize_tokyo() {
     let dict = build_test_dictionary(
@@ -59,6 +64,7 @@ fn test_tokenize_tokyo() {
     assert_eq!(worker.token(0).total_cost(), -79 + 5320);
 }
 
+/// 「京都東京都京都」の形態素解析テスト(複数の地名の連続)
 #[test]
 fn test_tokenize_kyotokyo() {
     let dict = build_test_dictionary(
@@ -120,6 +126,7 @@ fn test_tokenize_kyotokyo() {
     );
 }
 
+/// ユーザー辞書を使用した形態素解析のテスト
 #[test]
 fn test_tokenize_kyotokyo_with_user() {
     let dict = {
@@ -175,6 +182,7 @@ fn test_tokenize_kyotokyo_with_user() {
     );
 }
 
+/// 空白を含む文字列の形態素解析テスト(空白を単語として扱う)
 #[test]
 fn test_tokenize_tokyoto_with_space() {
     let dict = build_test_dictionary(
@@ -230,6 +238,7 @@ fn test_tokenize_tokyoto_with_space() {
     );
 }
 
+/// 空白を無視する設定での形態素解析テスト(1つの空白)
 #[test]
 fn test_tokenize_tokyoto_with_space_ignored() {
     let dict = build_test_dictionary(
@@ -274,6 +283,7 @@ fn test_tokenize_tokyoto_with_space_ignored() {
     );
 }
 
+/// 空白を無視する設定での形態素解析テスト(複数の空白)
 #[test]
 fn test_tokenize_tokyoto_with_spaces_ignored() {
     let dict = build_test_dictionary(
@@ -318,6 +328,7 @@ fn test_tokenize_tokyoto_with_spaces_ignored() {
     );
 }
 
+/// 空白を無視する設定での形態素解析テスト(文頭の空白)
 #[test]
 fn test_tokenize_tokyoto_startswith_spaces_ignored() {
     let dict = build_test_dictionary(
@@ -351,6 +362,7 @@ fn test_tokenize_tokyoto_startswith_spaces_ignored() {
     assert_eq!(worker.token(0).total_cost(), -79 + 5320);
 }
 
+/// 空白を無視する設定での形態素解析テスト(文末の空白)
 #[test]
 fn test_tokenize_tokyoto_endswith_spaces_ignored() {
     let dict = build_test_dictionary(
@@ -384,6 +396,7 @@ fn test_tokenize_tokyoto_endswith_spaces_ignored() {
     assert_eq!(worker.token(0).total_cost(), -79 + 5320);
 }
 
+/// アルファベット文字列の未知語処理テスト
 #[test]
 fn test_tokenize_kampersanda() {
     let dict = build_test_dictionary(
@@ -414,6 +427,7 @@ fn test_tokenize_kampersanda() {
     assert_eq!(worker.token(0).total_cost(), 887 + 11633);
 }
 
+/// ユーザー辞書を使用したアルファベット文字列の形態素解析テスト
 #[test]
 fn test_tokenize_kampersanda_with_user() {
     let dict = {
@@ -455,6 +469,7 @@ fn test_tokenize_kampersanda_with_user() {
     assert_eq!(worker.token(0).total_cost(), 887 - 2000);
 }
 
+/// max_grouping_len設定での形態素解析テスト(未知語のグルーピング長制限)
 #[test]
 fn test_tokenize_kampersanda_with_max_grouping() {
     let dict = build_test_dictionary(
@@ -499,6 +514,7 @@ fn test_tokenize_kampersanda_with_max_grouping() {
     );
 }
 
+/// 未登録の地名を含む文字列の形態素解析テスト
 #[test]
 fn test_tokenize_tokyoken() {
     let dict = build_test_dictionary(
@@ -515,7 +531,7 @@ fn test_tokenize_tokyoken() {
     assert_eq!(worker.num_tokens(), 4);
 }
 
-/// This test is to check if the category order in char.def is preserved.
+/// char.defのカテゴリ順序が保持されることの確認テスト
 #[test]
 fn test_tokenize_kanjinumeric() {
     let dict = build_test_dictionary(
@@ -540,6 +556,7 @@ fn test_tokenize_kanjinumeric() {
     }
 }
 
+/// 空文字列の形態素解析テスト
 #[test]
 fn test_tokenize_empty() {
     let dict = build_test_dictionary(
@@ -556,6 +573,7 @@ fn test_tokenize_empty() {
     assert_eq!(worker.num_tokens(), 0);
 }
 
+/// 同一のworkerで複数回の形態素解析を行うテスト
 #[test]
 fn test_tokenize_repeat() {
     let dict = build_test_dictionary(

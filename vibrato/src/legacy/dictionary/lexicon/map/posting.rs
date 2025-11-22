@@ -1,11 +1,22 @@
+//! ポスティングリストモジュール
+//!
+//! このモジュールは、単語エントリのポスティングリストを管理します。
+
 use bincode::{Decode, Encode};
 
+/// ポスティングリスト
+///
+/// この構造体は、各単語に対応する辞書エントリIDのリストを保持します。
+/// IDのセットは、長さと値を交互に格納する形式で保存されます。
+///
+/// # 実装詳細
+///
+/// 多くの場合、長さは8ビットで十分表現できるため、`data`をバイトシーケンスとして
+/// シリアライズすることでメモリ使用量を削減できます。しかし、接続行列のメモリ使用量と
+/// 比較すると、この最適化による効果は軽微です。そのため、簡潔性を優先して
+/// `Vec<u32>`として実装しています。
 #[derive(Decode, Encode)]
 pub struct Postings {
-    // Sets of ids are stored by interleaving their length and values.
-    // Then, 8 bits would be sufficient to represent the length in most cases, and
-    // serializing `data` into a byte sequence can reduce the memory usage.
-    // However, the memory usage is slight compared to that of the connection matrix.
-    // Thus, we implement `data` as `Vec<u32>` for simplicity.
+    /// エントリIDのデータ（長さと値を交互に格納）
     data: Vec<u32>,
 }

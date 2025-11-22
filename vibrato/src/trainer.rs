@@ -1,6 +1,16 @@
-//! Module for training models.
+//! 構造化パーセプトロンによるモデル学習のためのモジュール。
 //!
-//! # Examples
+//! このモジュールは、形態素解析器の学習に必要な機能を提供します。
+//! 構造化パーセプトロンアルゴリズムを使用して、教師データから単語の素性や接続コストを学習します。
+//!
+//! # 概要
+//!
+//! - 学習設定の読み込みと構成
+//! - コーパスからの訓練データ抽出
+//! - 構造化パーセプトロンによる学習
+//! - 学習済みモデルの辞書形式での出力
+//!
+//! # 使用例
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -8,7 +18,7 @@
 //! use vibrato_rkyv::trainer::{Corpus, Trainer, TrainerConfig};
 //! use vibrato_rkyv::{Dictionary, SystemDictionaryBuilder, Tokenizer};
 //!
-//! // Loads configurations
+//! // 設定ファイルの読み込み
 //! let lexicon_rdr = File::open("src/tests/resources/train_lex.csv")?;
 //! let char_prop_rdr = File::open("src/tests/resources/char.def")?;
 //! let unk_handler_rdr = File::open("src/tests/resources/train_unk.def")?;
@@ -22,23 +32,23 @@
 //!     rewrite_rules_rdr,
 //! )?;
 //!
-//! // Initializes trainer
+//! // トレーナーの初期化
 //! let trainer = Trainer::new(config)?
 //!     .regularization_cost(0.01)
 //!     .max_iter(300)
 //!     .num_threads(20);
 //!
-//! // Loads corpus
+//! // コーパスの読み込み
 //! let corpus_rdr = File::open("src/tests/resources/corpus.txt")?;
 //! let corpus = Corpus::from_reader(corpus_rdr)?;
 //!
-//! // Model data
+//! // モデルデータの出力先
 //! let mut lexicon_trained = vec![];
 //! let mut connector_trained = vec![];
 //! let mut unk_handler_trained = vec![];
 //! let mut user_lexicon_trained = vec![];
 //!
-//! // Starts training
+//! // 学習の開始
 //! let mut model = trainer.train(corpus)?;
 //!
 //! model.write_dictionary(
@@ -48,7 +58,7 @@
 //!     &mut user_lexicon_trained,
 //! )?;
 //!
-//! // Loads trained model
+//! // 学習済みモデルの読み込みとトークナイザーの作成
 //! let char_prop_rdr_again = File::open("src/tests/resources/char.def")?;
 //! let dict = SystemDictionaryBuilder::from_readers(
 //!     &*lexicon_trained,
@@ -89,7 +99,10 @@ pub use crate::trainer::model::Model;
 use crate::trainer::model::ModelData;
 use crate::utils::{self, FromU32};
 
-/// Trainer of morphological analyzer.
+/// 形態素解析器のトレーナー。
+///
+/// 構造化パーセプトロンアルゴリズムを使用して、コーパスから形態素解析モデルを学習します。
+/// 学習では、単語の素性と接続コストを最適化し、正しい形態素分割を実現します。
 pub struct Trainer {
     config: TrainerConfig,
     max_grouping_len: Option<usize>,
@@ -106,6 +119,23 @@ pub struct Trainer {
 }
 
 impl Trainer {
+    /// 素性セットを抽出します。
+    ///
+    /// 指定された素性文字列から、unigram、left、rightの各素性を抽出し、
+    /// 必要に応じて書き換えルールを適用します。
+    ///
+    /// # 引数
+    ///
+    /// * `feature_extractor` - 素性抽出器
+    /// * `unigram_rewriter` - unigram素性の書き換え器
+    /// * `left_rewriter` - left素性の書き換え器
+    /// * `right_rewriter` - right素性の書き換え器
+    /// * `feature_str` - 素性文字列
+    /// * `cate_id` - カテゴリID
+    ///
+    /// # 戻り値
+    ///
+    /// 抽出された素性セット
     fn extract_feature_set(
         feature_extractor: &mut FeatureExtractor,
         unigram_rewriter: &FeatureRewriter,
@@ -133,15 +163,21 @@ impl Trainer {
         FeatureSet::new(&unigram_features, &right_features, &left_features)
     }
 
-    /// Creates a new [`Trainer`] using the specified configuration.
+    /// 指定された設定を使用して新しい [`Trainer`] を作成します。
     ///
-    /// # Arguments
+    /// 辞書内の全単語と未知語に対して素性セットを抽出し、ラベルIDを割り当てます。
     ///
-    ///  * `config` - Training configuration.
+    /// # 引数
     ///
-    /// # Errors
+    ///  * `config` - 学習設定
     ///
-    /// [`VibratoError`](crate::errors::VibratoError) is returned when the model will become too large.
+    /// # 戻り値
+    ///
+    /// 初期化されたトレーナー
+    ///
+    /// # エラー
+    ///
+    /// モデルが大きくなりすぎる場合、[`VibratoError`](crate::errors::VibratoError) が返されます。
     pub fn new(mut config: TrainerConfig) -> Result<Self> {
         let mut provider = FeatureProvider::default();
         let mut label_id_map = HashMap::new();
@@ -198,56 +234,85 @@ impl Trainer {
         })
     }
 
-    /// Changes the cost of L1-regularization.
+    /// L1正則化のコストを変更します。
     ///
-    /// The greater this value, the stronger the regularization.
-    /// Default to 0.01.
+    /// この値が大きいほど、正則化が強くなります。
+    /// デフォルト値は 0.01 です。
     ///
-    /// # Panics
+    /// # 引数
     ///
-    /// The value must be greater than or equal to 0.
+    /// * `cost` - 正則化コスト（0以上の値）
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が更新されたトレーナー
+    ///
+    /// # パニック
+    ///
+    /// 値が0未満の場合、パニックします。
     pub fn regularization_cost(mut self, cost: f64) -> Self {
         assert!(cost >= 0.0);
         self.regularization_cost = cost;
         self
     }
 
-    /// Changes the maximum number of iterations.
+    /// 最大反復回数を変更します。
     ///
-    /// Default to 100.
+    /// デフォルト値は 100 です。
     ///
-    /// # Panics
+    /// # 引数
     ///
-    /// The value must be positive.
+    /// * `n` - 最大反復回数（1以上の値）
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が更新されたトレーナー
+    ///
+    /// # パニック
+    ///
+    /// 値が1未満の場合、パニックします。
     pub fn max_iter(mut self, n: u64) -> Self {
         assert!(n >= 1);
         self.max_iter = n;
         self
     }
 
-    /// Enables multi-threading.
+    /// マルチスレッドを有効化します。
     ///
-    /// Default to 1.
+    /// デフォルト値は 1（シングルスレッド）です。
     ///
-    /// # Panics
+    /// # 引数
     ///
-    /// The value must be positive.
+    /// * `n` - スレッド数（1以上の値）
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が更新されたトレーナー
+    ///
+    /// # パニック
+    ///
+    /// 値が1未満の場合、パニックします。
     pub fn num_threads(mut self, n: usize) -> Self {
         assert!(n >= 1);
         self.num_threads = n;
         self
     }
 
-    /// Specifies the maximum grouping length for unknown words.
-    /// By default, the length is infinity.
+    /// 未知語の最大グルーピング長を指定します。
     ///
-    /// This option is for compatibility with MeCab.
-    /// Specifies the argument with `24` if you want to obtain the same results as MeCab.
+    /// デフォルトでは、長さは無制限です。
     ///
-    /// # Arguments
+    /// このオプションは MeCab との互換性のためのものです。
+    /// MeCab と同じ結果を得たい場合は、引数に `24` を指定してください。
     ///
-    ///  * `max_grouping_len` - The maximum grouping length for unknown words.
-    ///    The default value is 0, indicating the infinity length.
+    /// # 引数
+    ///
+    ///  * `max_grouping_len` - 未知語の最大グルーピング長。
+    ///    デフォルト値は 0 で、無制限を示します。
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が更新されたトレーナー
     pub const fn max_grouping_len(mut self, max_grouping_len: usize) -> Self {
         if max_grouping_len != 0 {
             self.max_grouping_len = Some(max_grouping_len);
@@ -257,6 +322,21 @@ impl Trainer {
         self
     }
 
+    /// 訓練例からラティスを構築します。
+    ///
+    /// 正解パスのエッジ（正例）と辞書に含まれる全ての候補エッジ（負例）を追加します。
+    ///
+    /// # 引数
+    ///
+    /// * `example` - 訓練例
+    ///
+    /// # 戻り値
+    ///
+    /// 構築されたラティス
+    ///
+    /// # エラー
+    ///
+    /// ラティスの構築に失敗した場合、[`VibratoError`](crate::errors::VibratoError) が返されます。
     fn build_lattice(&mut self, example: &Example) -> Result<Lattice> {
         let Example { sentence, tokens } = example;
 
@@ -359,16 +439,23 @@ impl Trainer {
         Ok(lattice)
     }
 
-    /// Starts training and returns a model.
+    /// 学習を開始し、モデルを返します。
     ///
-    /// # Arguments
+    /// コーパス内の各例文からラティスを構築し、構造化パーセプトロンによって
+    /// 素性の重みを学習します。学習後、未使用の素性を削除してモデルを最適化します。
     ///
-    /// * `corpus` - Corpus used for training.
+    /// # 引数
     ///
-    /// # Errors
+    /// * `corpus` - 学習に使用するコーパス
     ///
-    /// [`VibratoError`](crate::errors::VibratoError) is returned when the sentence compilation
-    /// fails.
+    /// # 戻り値
+    ///
+    /// 学習済みモデル
+    ///
+    /// # エラー
+    ///
+    /// 文のコンパイルやラティスの構築に失敗した場合、
+    /// [`VibratoError`](crate::errors::VibratoError) が返されます。
     pub fn train(mut self, mut corpus: Corpus) -> Result<Model> {
         let mut lattices = vec![];
         for example in &mut corpus.examples {

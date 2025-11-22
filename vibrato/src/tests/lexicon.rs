@@ -4,6 +4,7 @@ use crate::dictionary::LexType;
 
 const LEX_CSV: &str = include_str!("./resources/lex.csv");
 
+/// 共通接頭辞検索のテスト(複数文字のマッチ)
 #[test]
 fn test_common_prefix_iterator_1() {
     let lexicon = Lexicon::from_reader(LEX_CSV.as_bytes(), LexType::System).unwrap();
@@ -39,6 +40,7 @@ fn test_common_prefix_iterator_1() {
     assert_eq!(it.next(), None);
 }
 
+/// 共通接頭辞検索のテスト(同一キーに複数のエントリ)
 #[test]
 fn test_common_prefix_iterator_2() {
     let lexicon = Lexicon::from_reader(LEX_CSV.as_bytes(), LexType::System).unwrap();
@@ -56,6 +58,7 @@ fn test_common_prefix_iterator_2() {
     assert_eq!(it.next(), None);
 }
 
+/// 単語の素性情報の取得テスト
 #[test]
 fn test_get_word_feature() {
     let lexicon = Lexicon::from_reader(LEX_CSV.as_bytes(), LexType::System).unwrap();

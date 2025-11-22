@@ -1,3 +1,7 @@
+//! 素性抽出モジュール。
+//!
+//! このモジュールは、テンプレートに基づいた素性の抽出機能を提供します。
+
 use std::num::NonZeroU32;
 use std::ops::Range;
 
@@ -18,6 +22,10 @@ struct ParsedTemplate {
     captures: Vec<(Range<usize>, FeatureType)>,
 }
 
+/// 素性抽出器。
+///
+/// テンプレートに基づいて、unigram、left、right の各素性を抽出します。
+/// 抽出された素性には一意のIDが割り当てられます。
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FeatureExtractor {
     pub unigram_feature_ids: HashMap<String, NonZeroU32>,
@@ -32,6 +40,18 @@ pub struct FeatureExtractor {
 }
 
 impl FeatureExtractor {
+    /// 新しい素性抽出器を作成します。
+    ///
+    /// テンプレート文字列を解析し、素性抽出のための内部構造を構築します。
+    ///
+    /// # 引数
+    ///
+    /// * `unigram_templates` - unigram素性のテンプレート
+    /// * `bigram_templates` - bigram素性のテンプレート（left, right）
+    ///
+    /// # 戻り値
+    ///
+    /// 初期化された素性抽出器
     pub fn new<S>(unigram_templates: &[S], bigram_templates: &[(S, S)]) -> Self
     where
         S: ToString,
@@ -142,11 +162,24 @@ impl FeatureExtractor {
         }
     }
 
-    /// Inserts feature patterns matched to the input templates in the hash map,
-    /// while incrementally assigning new feature ids.
-    /// Returns a sequence of ids of found features.
-    /// Since the contents of `feature_ids` may be changed outside the function, the next ID to be
-    /// given should be specified by `next_id`.
+    /// 入力テンプレートにマッチする素性パターンをハッシュマップに挿入し、
+    /// 新しい素性IDを増分的に割り当てます。
+    ///
+    /// 見つかった素性のIDシーケンスを返します。
+    /// `feature_ids` の内容が関数外で変更される可能性があるため、
+    /// 次に与えるべきIDは `next_id` で指定する必要があります。
+    ///
+    /// # 引数
+    ///
+    /// * `features` - 素性値
+    /// * `templates` - テンプレート
+    /// * `feature_ids` - 素性IDのマップ
+    /// * `next_id` - 次のID
+    /// * `category_id` - カテゴリID
+    ///
+    /// # 戻り値
+    ///
+    /// 抽出された素性IDのリスト
     fn extract_feature_ids<S>(
         features: &[S],
         templates: &[ParsedTemplate],
@@ -190,6 +223,16 @@ impl FeatureExtractor {
         result
     }
 
+    /// unigram素性IDを抽出します。
+    ///
+    /// # 引数
+    ///
+    /// * `features` - 素性値
+    /// * `category_id` - カテゴリID
+    ///
+    /// # 戻り値
+    ///
+    /// 抽出されたunigram素性IDのリスト
     pub fn extract_unigram_feature_ids<S>(
         &mut self,
         features: &[S],
@@ -210,6 +253,15 @@ impl FeatureExtractor {
         .collect()
     }
 
+    /// left素性IDを抽出します。
+    ///
+    /// # 引数
+    ///
+    /// * `features` - 素性値
+    ///
+    /// # 戻り値
+    ///
+    /// 抽出されたleft素性IDのリスト（一部 `None` の可能性あり）
     pub fn extract_left_feature_ids<S>(&mut self, features: &[S]) -> Vec<Option<NonZeroU32>>
     where
         S: AsRef<str>,
@@ -223,6 +275,15 @@ impl FeatureExtractor {
         )
     }
 
+    /// right素性IDを抽出します。
+    ///
+    /// # 引数
+    ///
+    /// * `features` - 素性値
+    ///
+    /// # 戻り値
+    ///
+    /// 抽出されたright素性IDのリスト（一部 `None` の可能性あり）
     pub fn extract_right_feature_ids<S>(&mut self, features: &[S]) -> Vec<Option<NonZeroU32>>
     where
         S: AsRef<str>,
@@ -236,10 +297,20 @@ impl FeatureExtractor {
         )
     }
 
+    /// left素性IDのマップへの参照を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// left素性IDのマップ
     pub const fn left_feature_ids(&self) -> &HashMap<String, NonZeroU32> {
         &self.left_feature_ids
     }
 
+    /// right素性IDのマップへの参照を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// right素性IDのマップ
     pub const fn right_feature_ids(&self) -> &HashMap<String, NonZeroU32> {
         &self.right_feature_ids
     }

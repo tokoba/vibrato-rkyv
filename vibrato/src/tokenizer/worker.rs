@@ -1,4 +1,7 @@
-//! Provider of a routine for tokenization.
+//! トークン化処理のためのルーチンを提供するモジュール。
+//!
+//! このモジュールは、形態素解析のための主要なワーカー構造体を提供します。
+//! ワーカーは内部データ構造を保持し、再利用することで不要なメモリアロケーションを避けます。
 use crate::dictionary::{ConnectorKindRef, DictionaryInnerRef};
 use crate::dictionary::connector::ConnectorView;
 use crate::dictionary::mapper::{ConnIdCounter, ConnIdProbs};
@@ -8,10 +11,21 @@ use crate::tokenizer::lattice::{Lattice, LatticeKind, Node};
 use crate::tokenizer::Tokenizer;
 use crate::tokenizer::nbest_generator::NbestGenerator;
 
-/// Provider of a routine for tokenization.
+/// トークン化処理のためのルーチンを提供する構造体。
 ///
-/// It holds the internal data structures used in tokenization,
-/// which can be reused to avoid unnecessary memory reallocation.
+/// トークン化に使用される内部データ構造を保持し、それらを再利用することで
+/// 不要なメモリ再割り当てを回避します。
+///
+/// # 例
+///
+/// ```ignore
+/// let mut worker = Worker::new(tokenizer);
+/// worker.reset_sentence("日本語の文章");
+/// worker.tokenize();
+/// for token in worker.token_iter() {
+///     println!("{}", token.surface());
+/// }
+/// ```
 pub struct Worker {
     pub(crate) tokenizer: Tokenizer,
     pub(crate) sent: Sentence,
@@ -22,7 +36,11 @@ pub struct Worker {
 }
 
 impl Worker {
-    /// Creates a new instance.
+    /// 新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `tokenizer` - 使用するトークナイザー
     pub(crate) fn new(tokenizer: Tokenizer) -> Self {
         Self {
             tokenizer,
@@ -34,7 +52,13 @@ impl Worker {
         }
     }
 
-    /// Resets the input sentence to be tokenized.
+    /// トークン化する入力文をリセットします。
+    ///
+    /// 新しい文を設定し、以前の状態をクリアします。
+    ///
+    /// # 引数
+    ///
+    /// * `input` - トークン化する入力文字列
     pub fn reset_sentence<S>(&mut self, input: S)
     where
         S: AsRef<str>,
@@ -55,8 +79,10 @@ impl Worker {
         }
     }
 
-    /// Tokenizes the input sentence set in `state`,
-    /// returning the result through `state`.
+    /// 設定された入力文をトークン化します。
+    ///
+    /// トークン化結果は内部状態に保存され、`token_iter()`や`token()`メソッドで
+    /// アクセスできます。空の文が設定されている場合は何も行いません。
     pub fn tokenize(&mut self) {
         if self.sent.chars().is_empty() {
             return;
@@ -67,10 +93,14 @@ impl Worker {
         lattice_1best.append_top_nodes(&mut self.top_nodes);
     }
 
-    /// Tokenizes the sentence and stores the top N-best results internally.
+    /// 文をトークン化し、上位N個の最良結果を内部に保存します。
     ///
-    /// After calling this, the results can be accessed via `num_nbest_paths()`,
-    /// `path_cost(path_idx)`, and `nbest_token_iter(path_idx)`.
+    /// この関数を呼び出した後、結果は`num_nbest_paths()`, `path_cost(path_idx)`,
+    /// `nbest_token_iter(path_idx)`を通じてアクセスできます。
+    ///
+    /// # 引数
+    ///
+    /// * `n` - 取得する候補パスの最大数
     pub fn tokenize_nbest(&mut self, n: usize) {
         self.nbest_paths.clear();
         if self.sent.chars().is_empty() {
@@ -90,26 +120,50 @@ impl Worker {
         self.nbest_paths = generator.take(n).collect();
     }
 
-    /// Gets the number of resultant tokens.
+    /// トークン化結果のトークン数を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの総数
     #[inline(always)]
     pub fn num_tokens(&self) -> usize {
         self.top_nodes.len()
     }
 
-    /// Gets the `i`-th resultant token.
+    /// `i`番目のトークンを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `i` - トークンのインデックス（0から始まる）
+    ///
+    /// # 戻り値
+    ///
+    /// 指定されたインデックスのトークン
     #[inline(always)]
     pub fn token<'w>(&'w self, i: usize) -> Token<'w> {
         let index = self.num_tokens() - i - 1;
         Token::new(self, index)
     }
 
-    /// Creates an iterator of resultant tokens.
+    /// トークン化結果のイテレータを作成します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンのイテレータ
     #[inline(always)]
     pub fn token_iter<'w>(&'w self) -> TokenIter<'w> {
         TokenIter::new(self)
     }
 
-    /// Returns an iterator over the tokens in the N-best path at `path_idx`.
+    /// `path_idx`で指定されたN-bestパスのトークンイテレータを返します。
+    ///
+    /// # 引数
+    ///
+    /// * `path_idx` - パスのインデックス（0から始まる）
+    ///
+    /// # 戻り値
+    ///
+    /// パスが存在する場合は`Some(イテレータ)`、存在しない場合は`None`
     pub fn nbest_token_iter(&self, path_idx: usize) -> Option<NbestTokenIter<'_>> {
         if path_idx < self.nbest_paths.len() {
             Some(NbestTokenIter::new(self, path_idx))
@@ -118,7 +172,9 @@ impl Worker {
         }
     }
 
-    /// Initializes a counter to compute occurrence probabilities of connection ids.
+    /// 接続IDの出現確率を計算するためのカウンタを初期化します。
+    ///
+    /// この関数は、接続IDの統計情報を収集する前に呼び出す必要があります。
     pub fn init_connid_counter(&mut self) {
         let (num_left, num_right) = match self.tokenizer.dictionary() {
             DictionaryInnerRef::Archived(dict) =>
@@ -132,11 +188,11 @@ impl Worker {
         ));
     }
 
-    /// Updates frequencies of connection ids at the last tokenization.
+    /// 最後のトークン化における接続IDの頻度を更新します。
     ///
-    /// # Panics
+    /// # パニック
     ///
-    /// It will panic when [`Self::init_connid_counter()`] has never been called.
+    /// [`Self::init_connid_counter()`]が一度も呼び出されていない場合、パニックします。
     pub fn update_connid_counts(&mut self) {
         match &self.lattice {
             LatticeKind::For1Best(lattice) => lattice.add_connid_counts(self.counter.as_mut().unwrap()),
@@ -144,22 +200,37 @@ impl Worker {
         }
     }
 
-    /// Computes the computed occurrence probabilities of connection ids,
-    /// returning those for left- and right-ids.
+    /// 接続IDの出現確率を計算し、左IDと右IDの確率を返します。
     ///
-    /// # Panics
+    /// # 戻り値
     ///
-    /// It will panic when [`Self::init_connid_counter()`] has never been called.
+    /// 左IDと右IDの確率のタプル
+    ///
+    /// # パニック
+    ///
+    /// [`Self::init_connid_counter()`]が一度も呼び出されていない場合、パニックします。
     pub fn compute_connid_probs(&self) -> (ConnIdProbs, ConnIdProbs) {
         self.counter.as_ref().unwrap().compute_probs()
     }
 
-    /// Returns the number of N-best paths found.
+    /// 見つかったN-bestパスの数を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// パスの総数
     pub fn num_nbest_paths(&self) -> usize {
         self.nbest_paths.len()
     }
 
-    /// Returns the total cost of the path at `path_idx`.
+    /// `path_idx`で指定されたパスの総コストを返します。
+    ///
+    /// # 引数
+    ///
+    /// * `path_idx` - パスのインデックス
+    ///
+    /// # 戻り値
+    ///
+    /// パスが存在する場合は`Some(コスト)`、存在しない場合は`None`
     pub fn path_cost(&self, path_idx: usize) -> Option<i32> {
         self.nbest_paths.get(path_idx).map(|(_, cost)| *cost)
     }

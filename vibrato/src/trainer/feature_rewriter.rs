@@ -1,3 +1,7 @@
+//! 素性書き換えモジュール。
+//!
+//! このモジュールは、プレフィックストライを使用した素性の書き換え機能を提供します。
+
 use std::{collections::HashSet, sync::LazyLock};
 
 use regex::Regex;
@@ -35,8 +39,10 @@ struct Node {
     actions: Vec<Action>,
 }
 
-/// Constructor of a prefix trie that stores rewrite patterns as nodes and
-/// rewrite rules as associated values.
+/// プレフィックストライのビルダー。
+///
+/// 書き換えパターンをノードとして、書き換えルールを関連値として格納する
+/// プレフィックストライを構築します。
 pub struct FeatureRewriterBuilder {
     nodes: Vec<Node>,
     ref_pattern: &'static LazyLock<Regex>,
@@ -49,6 +55,11 @@ impl Default for FeatureRewriterBuilder {
 }
 
 impl FeatureRewriterBuilder {
+    /// 新しいビルダーを作成します。
+    ///
+    /// # 戻り値
+    ///
+    /// 初期化されたビルダー
     pub fn new() -> Self {
         Self {
             nodes: vec![Node::default()],
@@ -56,9 +67,15 @@ impl FeatureRewriterBuilder {
         }
     }
 
-    /// Adds the rewrite rule associated with the pattern.
-    /// If the pattern is shorter than the rewrite rule,
-    /// the remainings are automatically padded with "*".
+    /// パターンに関連付けられた書き換えルールを追加します。
+    ///
+    /// パターンが書き換えルールより短い場合、
+    /// 残りは自動的に "*" でパディングされます。
+    ///
+    /// # 引数
+    ///
+    /// * `pattern` - マッチングパターン
+    /// * `rewrite` - 書き換えルール
     pub fn add_rule<S>(&mut self, pattern: &[S], rewrite: &[S])
     where
         S: AsRef<str>,
@@ -109,7 +126,10 @@ impl FeatureRewriterBuilder {
     }
 }
 
-/// Rewriter that maintains rewrite patterns and rules in a prefix trie.
+/// プレフィックストライで書き換えパターンとルールを管理する書き換え器。
+///
+/// 素性文字列に対してパターンマッチングを行い、
+/// マッチしたパターンに対応する書き換えルールを適用します。
 #[derive(Archive, Serialize, Deserialize)]
 pub struct FeatureRewriter {
     nodes: Vec<Node>,
@@ -124,8 +144,17 @@ impl From<FeatureRewriterBuilder> for FeatureRewriter {
 }
 
 impl FeatureRewriter {
-    /// Returns the rewritten features if matched.
-    /// If multiple patterns are matched, the earlier registered one is applied.
+    /// マッチした場合、書き換えられた素性を返します。
+    ///
+    /// 複数のパターンがマッチした場合、先に登録されたものが適用されます。
+    ///
+    /// # 引数
+    ///
+    /// * `features` - 入力素性
+    ///
+    /// # 戻り値
+    ///
+    /// マッチした場合は書き換えられた素性、マッチしなかった場合は `None`
     pub fn rewrite<S>(&self, features: &[S]) -> Option<Vec<String>>
     where
         S: AsRef<str>,
