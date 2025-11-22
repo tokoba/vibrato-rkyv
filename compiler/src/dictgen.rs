@@ -1,3 +1,9 @@
+//! 辞書生成モジュール
+//!
+//! このモジュールは、訓練されたモデルから形態素解析用の辞書ファイル群を生成する機能を提供します。
+//! 語彙ファイル(lex.csv)、連接コスト定義ファイル(matrix.def)、未知語定義ファイル(unk.def)、
+//! およびオプションでバイグラム情報ファイルを出力します。
+
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -6,8 +12,14 @@ use clap::Parser;
 use vibrato_rkyv::errors::VibratoError;
 use vibrato_rkyv::trainer::Model;
 
+/// ファイルベースの辞書ライタ型エイリアス
+///
+/// すべてのライタがファイルである場合の型を簡略化します。
 pub type FileDictionaryWriters = DictionaryWriters<File, File, File, File, File, File, File>;
 
+/// 辞書生成コマンドの引数
+///
+/// モデルファイルの入力パスと、生成する辞書ファイルの出力パスを指定します。
 #[derive(Parser, Debug)]
 #[clap(name = "dictgen", about = "Dictionary generator")]
 pub struct Args {
@@ -44,37 +56,68 @@ pub struct Args {
     conn_id_info_out: Option<PathBuf>,
 }
 
+/// 辞書生成処理中に発生する可能性のあるエラー
 #[derive(Debug, thiserror::Error)]
 pub enum DictgenError {
+    /// 入出力エラー
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
 
+    /// モデル処理エラー
     #[error("Failed to process the model: {0}")]
     Model(#[from] VibratoError),
 }
 
+/// 接続ID情報を書き込むためのライタ群
+///
+/// バイグラム情報(left, right, cost)を書き込むためのライタを保持します。
 #[derive(Debug, Clone)]
 pub struct ConnIdInfoWriters<LW: Write, RW: Write, CW: Write> {
+    /// 左接続ID情報のライタ
     pub left_wtr: LW,
+    /// 右接続ID情報のライタ
     pub right_wtr: RW,
+    /// バイグラムコストのライタ
     pub cost_wtr: CW,
 }
 
+/// 辞書ファイルを書き込むためのライタ群
+///
+/// 辞書生成に必要なすべてのファイルへのライタを保持します。
 #[derive(Debug, Clone)]
 pub struct DictionaryWriters<L, C, U, S, LW, RW, CW>
 where
     L: Write, C: Write, U: Write, S: Write,
     LW: Write, RW: Write, CW: Write,
 {
+    /// 語彙ファイル(lex.csv)のライタ
     pub lexicon_wtr: L,
+    /// 連接コスト定義ファイル(matrix.def)のライタ
     pub matrix_wtr: C,
+    /// 未知語定義ファイル(unk.def)のライタ
     pub unk_wtr: U,
+    /// ユーザー辞書ファイルのライタ(オプション)
     pub user_lexicon_wtr: Option<S>,
+    /// 接続ID情報ファイルのライタ群(オプション)
     pub conn_id_info_wtrs: Option<ConnIdInfoWriters<LW, RW, CW>>,
 }
 
 
-/// Runs the dictgen subcommand. It parses arguments, loads a model, and calls the core logic.
+/// 辞書生成コマンドを実行する
+///
+/// モデルファイルを読み込み、辞書ファイル群を生成します。
+///
+/// # 引数
+///
+/// * `args` - 辞書生成コマンドの引数
+///
+/// # 戻り値
+///
+/// 成功時は`Ok(())`
+///
+/// # エラー
+///
+/// ファイルの読み書きやモデル処理に失敗した場合、`DictgenError`を返します。
 pub fn run(args: Args) -> Result<(), DictgenError> {
     let model_rdr = zstd::Decoder::new(File::open(args.model_in)?)?;
     let mut model = Model::read_model(model_rdr)?;
@@ -92,6 +135,24 @@ pub fn run(args: Args) -> Result<(), DictgenError> {
     Ok(())
 }
 
+/// 指定されたパスから辞書ライタ群を作成する
+///
+/// # 引数
+///
+/// * `lexicon_out_path` - 語彙ファイル(lex.csv)の出力パス
+/// * `matrix_out_path` - 連接コスト定義ファイル(matrix.def)の出力パス
+/// * `unk_out_path` - 未知語定義ファイル(unk.def)の出力パス
+/// * `user_lexicon_out_path` - ユーザー辞書ファイルの出力パス(オプション)
+/// * `conn_id_info_out_path` - 接続ID情報ファイルのベース名(オプション)
+///   `.left`, `.right`, `.cost`の接尾辞が付加されます
+///
+/// # 戻り値
+///
+/// 作成されたファイルライタ群
+///
+/// # エラー
+///
+/// ファイルの作成に失敗した場合、`io::Error`を返します。
 pub fn create_dictionary_writers_from_paths(
     lexicon_out_path: &Path,
     matrix_out_path: &Path,
@@ -134,6 +195,20 @@ pub fn create_dictionary_writers_from_paths(
     })
 }
 
+/// モデルから辞書ファイル群を生成する
+///
+/// # 引数
+///
+/// * `model` - 訓練されたモデル
+/// * `writers` - 辞書ファイルを書き込むライタ群
+///
+/// # 戻り値
+///
+/// 成功時は`Ok(())`
+///
+/// # エラー
+///
+/// 辞書ファイルの生成に失敗した場合、`VibratoError`を返します。
 pub fn generate_dictionary_files<L, C, U, S, LW, RW, CW>(
     model: &mut Model,
     writers: &mut DictionaryWriters<L, C, U, S, LW, RW, CW>,

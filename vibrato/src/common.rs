@@ -1,10 +1,15 @@
-//! Common settings in Vibrato.
+//! Vibratoの共通設定
+//!
+//! このモジュールは、ライブラリ全体で使用される定数と共通設定を定義します。
 
-/// The maximam length of an input sentence.
+/// 入力文の最大長
 ///
-/// Note that the value must be represented with u16 so that
-/// an (exclusive) end position can be represented in 16 bits.
+/// 文字位置はu16で表現されるため、排他的な終了位置を16ビットで
+/// 表現できる必要があることに注意してください。
 pub const MAX_SENTENCE_LENGTH: usize = usize::MAX;
 
-/// The fixed connection id of BOS/EOS.
+/// BOS（文頭）/EOS（文末）の固定接続ID
+///
+/// ビタビアルゴリズムにおいて、文の開始と終了を表す特殊ノードに
+/// 割り当てられる接続IDです。
 pub const BOS_EOS_CONNECTION_ID: u16 = 0;

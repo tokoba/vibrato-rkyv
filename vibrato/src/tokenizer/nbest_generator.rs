@@ -1,4 +1,7 @@
-//! N-best generator
+//! N-best解生成モジュール。
+//!
+//! このモジュールは、A*探索アルゴリズムを使用してトークン化の
+//! 上位N個の最良解を生成する機能を提供します。
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::rc::Rc;
@@ -13,26 +16,27 @@ use crate::tokenizer::lattice::LatticeNBest;
 //
 // QueueItem -> Path (node: EOS) -> Path (node: n-1) -> ... -> Path (node: BOS)
 
-/// A partial path being explored by the A* search.
-/// It forms a linked list from the end of the sentence to the beginning.
+/// A*探索によって探索中の部分パス。
+///
+/// 文の終端から始端への連結リストを形成します。
 #[derive(Debug)]
 struct SearchPath {
-    /// The node at the current position in the path.
+    /// パスの現在位置にあるノード。
     node: *const Node,
-    /// A pointer to the next node in the path (towards the BOS).
+    /// パス内の次のノードへのポインタ（BOS方向）。
     prev: Option<Rc<SearchPath>>,
-    /// The total cost from the EOS to this node (backward cost).
+    /// EOSからこのノードまでの総コスト（後方コスト）。
     backward_cost: i32,
 }
 
-/// An item in the priority queue for the A* search.
+/// A*探索のための優先度付きキュー内のアイテム。
 #[derive(Debug)]
 struct QueueItem {
-    /// A pointer to the current partial path.
+    /// 現在の部分パスへのポインタ。
     path: Rc<SearchPath>,
-    /// The priority of the path, calculated as f(x) = g(x) + h(x).
-    ///  - g(x) is the backward_cost from the EOS.
-    ///  - h(x) is the forward_cost (min_cost) from the BOS, stored in the node.
+    /// パスの優先度。f(x) = g(x) + h(x)として計算されます。
+    ///  - g(x)はEOSからの後方コスト（backward_cost）。
+    ///  - h(x)はBOSからの前方コスト（min_cost）で、ノードに保存されています。
     priority: i32,
 }
 
@@ -43,7 +47,10 @@ impl Ord for QueueItem {
     fn cmp(&self, other: &Self) -> Ordering { other.priority.cmp(&self.priority) } // Invert to create a min-heap
 }
 
-/// Generator for N-best tokenization results.
+/// N-bestトークン化結果のジェネレータ。
+///
+/// A*探索アルゴリズムを使用して、コストが低い順に
+/// トークン化パスを生成するイテレータとして機能します。
 pub struct NbestGenerator<'a> {
     queue: BinaryHeap<QueueItem>,
     connector: &'a dyn ConnectorCost,
@@ -51,6 +58,17 @@ pub struct NbestGenerator<'a> {
 }
 
 impl<'a> NbestGenerator<'a> {
+    /// 新しいN-bestジェネレータを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `lattice` - N-best用のラティス
+    /// * `connector` - 接続コスト計算用のコネクタ
+    /// * `dictionary` - 辞書への参照
+    ///
+    /// # 戻り値
+    ///
+    /// 新しいN-bestジェネレータインスタンス
     pub fn new(
         lattice: &'a LatticeNBest,
         connector: &'a dyn ConnectorCost,
@@ -73,8 +91,19 @@ impl<'a> NbestGenerator<'a> {
 }
 
 impl<'a> Iterator for NbestGenerator<'a> {
+    /// イテレータが返す要素の型。
+    ///
+    /// ノードポインタのベクトルとパスの総コストのタプル。
     type Item = (Vec<*const Node>, i32);
 
+    /// 次のN-bestパスを取得します。
+    ///
+    /// A*探索を使用して、次に低コストなパスを見つけて返します。
+    ///
+    /// # 戻り値
+    ///
+    /// パスが見つかった場合は`Some((ノードのベクトル, コスト))`、
+    /// すべてのパスが探索済みの場合は`None`
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(item) = self.queue.pop() {
             let current_path = &item.path;

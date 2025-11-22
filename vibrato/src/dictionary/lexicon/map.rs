@@ -1,3 +1,8 @@
+//! 単語マッピングとトライ構造
+//!
+//! このモジュールは、単語をトライ構造で効率的に検索するための
+//! データ構造を提供します。
+
 pub mod posting;
 pub mod trie;
 
@@ -9,6 +14,7 @@ use crate::dictionary::lexicon::map::trie::Trie;
 use crate::errors::Result;
 use crate::utils::FromU32;
 
+/// 単語をトライ構造で管理するマップ
 #[derive(Archive, Serialize, Deserialize)]
 pub struct WordMap {
     trie: Trie,
@@ -16,6 +22,7 @@ pub struct WordMap {
 }
 
 impl WordMap {
+    /// 単語のイテレータから新しいインスタンスを作成します。
     pub fn new<I, W>(words: I) -> Result<Self>
     where
         I: IntoIterator<Item = W>,
@@ -41,6 +48,7 @@ impl WordMap {
     }
 }
 
+/// 単語マップを構築するビルダー
 #[derive(Default)]
 pub struct WordMapBuilder {
     map: BTreeMap<String, Vec<u32>>,

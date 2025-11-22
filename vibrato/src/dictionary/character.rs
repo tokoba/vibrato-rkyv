@@ -1,3 +1,8 @@
+//! 文字プロパティと文字情報を管理するモジュール
+//!
+//! このモジュールは `char.def` ファイルから文字の種類や属性を読み込み、
+//! 形態素解析時に使用する文字情報を提供します。
+
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{BufRead, BufReader, Read};
@@ -13,14 +18,14 @@ const BASE_ID_BITS: usize = 8;
 const BASE_ID_MASK: u32 = (1 << BASE_ID_BITS) - 1;
 const LENGTH_BITS: usize = 4;
 
-/// Information of a character defined in `char.def`.
+/// `char.def` で定義された文字の情報
 ///
-/// The memory layout is
-///   cate_idset = 18 bits
-///      base_id =  8 bits
-///       invoke =  1 bit
-///        group =  1 bit
-///       length =  4 bits
+/// メモリレイアウトは以下の通り:
+///   cate_idset = 18 ビット
+///      base_id =  8 ビット
+///       invoke =  1 ビット
+///        group =  1 ビット
+///       length =  4 ビット
 #[derive(Default, Clone, Copy, Archive, Serialize, Deserialize)]
 pub struct CharInfo(u32);
 
@@ -37,6 +42,19 @@ impl fmt::Debug for CharInfo {
 }
 
 impl CharInfo {
+    /// 文字情報の新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `cate_idset` - カテゴリIDセット
+    /// * `base_id` - ベースID
+    /// * `invoke` - 未知語として扱うかどうか
+    /// * `group` - グループ化可能かどうか
+    /// * `length` - 文字の長さ
+    ///
+    /// # 戻り値
+    ///
+    /// 引数が有効範囲内であれば `Some(CharInfo)` を、そうでなければ `None` を返します。
     pub fn new(
         cate_idset: u32,
         base_id: u32,
@@ -62,45 +80,72 @@ impl CharInfo {
         ))
     }
 
+    /// カテゴリIDセットをリセットします。
     #[inline(always)]
     pub const fn reset_cate_idset(&mut self, cate_idset: u32) {
         self.0 &= !CATE_IDSET_MASK;
         self.0 |= cate_idset;
     }
 
+    /// カテゴリIDセットを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// カテゴリIDセット
     #[inline(always)]
     pub const fn cate_idset(&self) -> u32 {
         self.0 & CATE_IDSET_MASK
     }
 
+    /// ベースIDを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// ベースID
     #[inline(always)]
     pub const fn base_id(&self) -> u32 {
         (self.0 >> CATE_IDSET_BITS) & BASE_ID_MASK
     }
 
+    /// 未知語として扱うかどうかを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 未知語として扱う場合は `true`
     #[inline(always)]
     pub const fn invoke(&self) -> bool {
         (self.0 >> (CATE_IDSET_BITS + BASE_ID_BITS)) & 1 != 0
     }
 
+    /// グループ化可能かどうかを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// グループ化可能な場合は `true`
     #[inline(always)]
     pub const fn group(&self) -> bool {
         (self.0 >> (CATE_IDSET_BITS + BASE_ID_BITS + 1)) & 1 != 0
     }
 
+    /// 文字の長さを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 文字の長さ
     #[inline(always)]
     pub const fn length(&self) -> u16 {
         (self.0 >> (CATE_IDSET_BITS + BASE_ID_BITS + 2)) as u16
     }
 }
 
+/// 文字範囲とそのカテゴリを表す構造体
 struct CharRange {
     start: usize,
     end: usize,
     categories: Vec<String>,
 }
 
-/// Mapping from characters to their information.
+/// 文字から文字情報へのマッピング
 #[derive(Archive, Serialize, Deserialize)]
 pub struct CharProperty {
     chr2inf: Vec<CharInfo>,
@@ -108,6 +153,15 @@ pub struct CharProperty {
 }
 
 impl CharProperty {
+    /// 指定された文字の文字情報を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `c` - 文字
+    ///
+    /// # 戻り値
+    ///
+    /// 文字情報
     #[inline(always)]
     pub fn char_info(&self, c: char) -> CharInfo {
         self.chr2inf
@@ -115,6 +169,15 @@ impl CharProperty {
             .map_or_else(|| self.chr2inf[0], |cinfo| *cinfo)
     }
 
+    /// カテゴリ名からカテゴリIDを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `category` - カテゴリ名
+    ///
+    /// # 戻り値
+    ///
+    /// カテゴリIDが存在すれば `Some(u32)` を、そうでなければ `None` を返します。
     #[inline(always)]
     pub fn cate_id(&self, category: &str) -> Option<u32> {
         self.categories
@@ -123,6 +186,15 @@ impl CharProperty {
             .map(|id| u32::try_from(id).unwrap())
     }
 
+    /// カテゴリIDからカテゴリ名を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `cate_id` - カテゴリID
+    ///
+    /// # 戻り値
+    ///
+    /// カテゴリ名が存在すれば `Some(&str)` を、そうでなければ `None` を返します。
     #[cfg(feature = "train")]
     #[inline(always)]
     pub fn cate_str(&self, cate_id: u32) -> Option<&str> {
@@ -131,12 +203,29 @@ impl CharProperty {
             .map(|c| c.as_str())
     }
 
+    /// カテゴリの総数を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// カテゴリの総数
     #[inline(always)]
     pub fn num_categories(&self) -> usize {
         self.categories.len()
     }
 
-    /// Creates a new instance from `char.def`.
+    /// `char.def` ファイルから新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - `char.def` ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(CharProperty)` を、エラー時は `Err` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_reader<R>(rdr: R) -> Result<Self>
     where
         R: Read,
@@ -282,9 +371,17 @@ impl CharProperty {
 }
 
 impl ArchivedCharProperty {
-    /// Gets the category ID from its name.
+    /// カテゴリ名からカテゴリIDを取得します。
     ///
-    /// This implementation is for the archived version of `CharProperty`.
+    /// このメソッドはアーカイブ版 `CharProperty` 用の実装です。
+    ///
+    /// # 引数
+    ///
+    /// * `category` - カテゴリ名
+    ///
+    /// # 戻り値
+    ///
+    /// カテゴリIDが存在すれば `Some(u32)` を、そうでなければ `None` を返します。
     pub fn cate_id(&self, category: &str) -> Option<u32> {
         self.categories
             .iter()
@@ -292,6 +389,15 @@ impl ArchivedCharProperty {
             .map(|id| u32::try_from(id).unwrap())
     }
 
+    /// 指定された文字の文字情報を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `c` - 文字
+    ///
+    /// # 戻り値
+    ///
+    /// 文字情報
     #[inline(always)]
     pub fn char_info(&self, c: char) -> CharInfo {
         let cinfo = self.chr2inf

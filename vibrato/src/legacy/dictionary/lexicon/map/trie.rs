@@ -1,3 +1,7 @@
+//! トライ構造モジュール
+//!
+//! このモジュールは、単語検索用のトライ（Trie）データ構造を提供します。
+
 use bincode::{
     de::{BorrowDecode, BorrowDecoder, Decoder},
     enc::Encoder,
@@ -7,7 +11,12 @@ use bincode::{
 
 use crate::legacy::errors::Result;
 
+/// トライ構造
+///
+/// この構造体は、ダブル配列トライを使用した効率的な文字列検索を提供します。
+/// crawdadクレートの`Trie`実装をラップしています。
 pub struct Trie {
+    /// ダブル配列トライの内部実装
     da: crawdad::Trie,
 }
 

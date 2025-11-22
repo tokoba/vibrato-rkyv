@@ -1,3 +1,7 @@
+//! モデル管理モジュール。
+//!
+//! このモジュールは、学習済みモデルの管理と辞書形式への出力機能を提供します。
+
 use std::io::{BufWriter, Read, Write};
 use std::num::NonZeroU32;
 
@@ -20,13 +24,21 @@ use crate::trainer::corpus::Word;
 pub use crate::trainer::Trainer;
 use crate::utils::{self, FromU32};
 
+/// モデルデータ。
+///
+/// 学習設定と生モデルを保持します。
 #[derive(Archive, Serialize, Deserialize)]
 pub struct ModelData {
+    /// 学習設定。
     pub config: TrainerConfig,
+    /// 生モデル。
     pub raw_model: rucrf_rkyv::RawModel,
 }
 
-/// Tokenization Model
+/// トークン化モデル。
+///
+/// 学習済みのモデルデータと、オプションでマージされたモデル、
+/// ユーザー定義辞書のエントリを保持します。
 pub struct Model {
     pub(crate) data: ModelData,
 
@@ -38,19 +50,24 @@ pub struct Model {
 }
 
 impl Model {
-    /// Reads the user-defined lexicon file.
+    /// ユーザー定義辞書ファイルを読み込みます。
     ///
-    /// If you want to assign parameters to the user-defined lexicon file, you need to call this
-    /// function before exporting the dictionary. The model overwrites the parameter only when it
-    /// is `0,0,0`. Otherwise, the parameter is used as is.
+    /// ユーザー定義辞書ファイルにパラメータを割り当てたい場合は、
+    /// 辞書をエクスポートする前にこの関数を呼び出す必要があります。
+    /// モデルは、パラメータが `0,0,0` の場合のみ上書きします。
+    /// それ以外の場合は、パラメータがそのまま使用されます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `rdr` - Read sink of the user-defined lexicon file.
+    /// * `rdr` - ユーザー定義辞書ファイルのリーダー
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// [`VibratoError`](crate::errors::VibratoError) is returned when the reading fails.
+    /// 読み込み成功時は `Ok(())`
+    ///
+    /// # エラー
+    ///
+    /// 読み込みに失敗した場合、[`VibratoError`](crate::errors::VibratoError) が返されます。
     pub fn read_user_lexicon<R>(&mut self, mut rdr: R) -> Result<()>
     where
         R: Read,
@@ -93,20 +110,24 @@ impl Model {
         Ok(())
     }
 
-    /// Write the relation between left/right connection IDs and features.
+    /// 左右の接続IDと素性の関係を書き込みます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `left_wtr` - Write sink targetting the `.left` file.
-    /// * `right_wtr` - Write sink targetting the `.right` file.
-    /// * `cost_wtr` - Write sink targetting the `.cost` file.
+    /// * `left_wtr` - `.left` ファイルへの書き込み先
+    /// * `right_wtr` - `.right` ファイルへの書き込み先
+    /// * `cost_wtr` - `.cost` ファイルへの書き込み先
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// [`VibratoError`](crate::errors::VibratoError) is returned when:
+    /// 書き込み成功時は `Ok(())`
     ///
-    /// - merging costs fails, or
-    /// - the writing fails.
+    /// # エラー
+    ///
+    /// 以下の場合に [`VibratoError`](crate::errors::VibratoError) が返されます：
+    ///
+    /// - コストのマージに失敗した場合
+    /// - 書き込みに失敗した場合
     pub fn write_bigram_details<L, R, C>(
         &mut self,
         left_wtr: L,
@@ -204,22 +225,26 @@ impl Model {
         Ok(())
     }
 
-    /// Write the dictionary.
+    /// 辞書を書き込みます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `lexicon_wtr` - Write sink targetting `lex.csv`.
-    /// * `connector_wtr` - Write sink targetting `matrix.def`.
-    /// * `unk_handler_wtr` - Write sink targetting `unk.def`.
-    /// * `user_lexicon_wtr` - Write sink targetting `user.csv`. Set a dummy argument if no user-defined
-    ///   lexicon file is specified.
+    /// * `lexicon_wtr` - `lex.csv` への書き込み先
+    /// * `connector_wtr` - `matrix.def` への書き込み先
+    /// * `unk_handler_wtr` - `unk.def` への書き込み先
+    /// * `user_lexicon_wtr` - `user.csv` への書き込み先。ユーザー定義辞書を
+    ///   指定しない場合はダミーの引数を設定してください。
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// [`VibratoError`](crate::errors::VibratoError) is returned when:
+    /// 書き込み成功時は `Ok(())`
     ///
-    /// - merging costs fails, or
-    /// - the writing fails.
+    /// # エラー
+    ///
+    /// 以下の場合に [`VibratoError`](crate::errors::VibratoError) が返されます：
+    ///
+    /// - コストのマージに失敗した場合
+    /// - 書き込みに失敗した場合
     pub fn write_dictionary<L, C, U, S>(
         &mut self,
         lexicon_wtr: L,
@@ -348,11 +373,19 @@ impl Model {
         Ok(())
     }
 
-    /// Exports the model data.
+    /// モデルデータをエクスポートします。
     ///
-    /// # Errors
+    /// # 引数
     ///
-    /// When bincode generates an error, it will be returned as is.
+    /// * `wtr` - 書き込み先
+    ///
+    /// # 戻り値
+    ///
+    /// エクスポート成功時は `Ok(())`
+    ///
+    /// # エラー
+    ///
+    /// シリアライゼーションエラーが発生した場合、それがそのまま返されます。
     pub fn write_model<W>(&self, mut wtr: W) -> Result<()>
     where
         W: Write,
@@ -369,11 +402,19 @@ impl Model {
         Ok(())
     }
 
-    /// Reads a model.
+    /// モデルを読み込みます。
     ///
-    /// # Errors
+    /// # 引数
     ///
-    /// When bincode generates an error, it will be returned as is.
+    /// * `rdr` - モデルファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 読み込まれたモデル
+    ///
+    /// # エラー
+    ///
+    /// デシリアライゼーションエラーが発生した場合、それがそのまま返されます。
     pub fn read_model<R>(mut rdr: R) -> Result<Self>
     where
         R: Read,

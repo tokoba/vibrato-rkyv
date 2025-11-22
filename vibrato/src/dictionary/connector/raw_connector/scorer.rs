@@ -1,3 +1,8 @@
+//! 接続コストの効率的な計算のためのスコアラー
+//!
+//! このモジュールは、特徴ペアから接続コストを高速に計算するための
+//! スコアラーを提供します。
+
 #![allow(dead_code)]
 use std::collections::BTreeMap;
 use rkyv::rancor::Error;
@@ -16,13 +21,16 @@ use crate::utils::FromU32;
 
 const UNUSED_CHECK: u32 = u32::MAX;
 
+/// SIMD演算のサイズ
 pub const SIMD_SIZE: usize = 8;
 
+/// 8つの31ビット符号なし整数のSIMDベクトル
 #[derive(Clone, Copy, Debug, Archive, Serialize, Deserialize, PartialEq, Eq)]
 #[rkyv(compare(PartialEq), derive(Clone, Copy))]
 pub struct U31x8(pub [U31; SIMD_SIZE]);
 
 impl U31x8 {
+    /// U31のスライスをU31x8のベクトルに変換します。
     pub fn to_simd_vec(data: &[U31]) -> Vec<Self> {
         let mut result = vec![];
         for xs in data.chunks(SIMD_SIZE) {
@@ -47,16 +55,25 @@ impl Default for U31x8 {
     }
 }
 
+/// スコアラーを構築するためのビルダー
 pub struct ScorerBuilder {
-    // Two-level trie mapping a pair of two keys into a cost
+    /// 2つのキーのペアをコストにマッピングする2レベルトライ
     pub trie: Vec<BTreeMap<U31, i32>>,
 }
 
 impl ScorerBuilder {
+    /// 新しいスコアラービルダーを作成します。
     pub const fn new() -> Self {
         Self { trie: vec![] }
     }
 
+    /// キーペアとコストを挿入します。
+    ///
+    /// # 引数
+    ///
+    /// * `key1` - 第1キー
+    /// * `key2` - 第2キー
+    /// * `cost` - 接続コスト
     pub fn insert(&mut self, key1: U31, key2: U31, cost: i32) {
         let key1 = usize::from_u32(key1.get());
         if key1 >= self.trie.len() {
@@ -76,6 +93,11 @@ impl ScorerBuilder {
         true
     }
 
+    /// スコアラーを構築します。
+    ///
+    /// # 戻り値
+    ///
+    /// 構築されたスコアラー
     pub fn build(&self) -> Scorer {
         let mut bases = vec![0; self.trie.len()];
         let mut checks = vec![];
@@ -133,6 +155,7 @@ mod avx2_support {
     }
 }
 
+/// 接続コストを効率的に計算するスコアラー
 #[derive(Debug, Archive, Serialize, Deserialize)]
 pub struct Scorer {
     bases: Vec<u32>,
@@ -165,6 +188,7 @@ impl Default for Scorer {
 }
 
 impl Scorer {
+    /// キーペアからコストを取得します（AVX2なし版）。
     #[cfg(not(target_feature = "avx2"))]
     #[inline(always)]
     fn retrieve_cost(&self, key1: U31, key2: U31) -> Option<i32> {
@@ -179,6 +203,16 @@ impl Scorer {
         None
     }
 
+    /// キーペアの配列からコストを累積します（AVX2なし版）。
+    ///
+    /// # 引数
+    ///
+    /// * `keys1` - 第1キーの配列
+    /// * `keys2` - 第2キーの配列
+    ///
+    /// # 戻り値
+    ///
+    /// 累積された接続コスト
     #[cfg(not(target_feature = "avx2"))]
     #[inline(always)]
     pub fn accumulate_cost(&self, keys1: &[U31x8], keys2: &[U31x8]) -> i32 {
@@ -236,6 +270,16 @@ impl Scorer {
         }
     }
 
+    /// キーペアの配列からコストを累積します（AVX2版）。
+    ///
+    /// # 引数
+    ///
+    /// * `keys1` - 第1キーの配列
+    /// * `keys2` - 第2キーの配列
+    ///
+    /// # 戻り値
+    ///
+    /// 累積された接続コスト
     #[cfg(target_feature = "avx2")]
     #[inline(always)]
     pub fn accumulate_cost(&self, keys1: &[U31x8], keys2: &[U31x8]) -> i32 {
@@ -258,10 +302,12 @@ impl Scorer {
         }
     }
 
+    /// スコアラーをバイト列にシリアライズします。
     pub fn serialize_to_bytes(&self) -> Vec<u8> {
         to_bytes::<Error>(self).expect("failed to rkyv serialize").into()
     }
 
+    /// バイト列からスコアラーをデシリアライズします。
     pub unsafe fn deserialize_from_bytes(bytes: &[u8]) -> Scorer {
         unsafe { from_bytes_unchecked::<Scorer, Error>(bytes).expect("failed to rkyv deserialize") }
     }

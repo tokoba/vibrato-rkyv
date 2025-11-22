@@ -1,4 +1,9 @@
-//! Container of resultant tokens.
+//! トークンの結果コンテナ
+//!
+//! このモジュールは、形態素解析の結果として得られるトークンを表現する型を提供します。
+//! トークンは辞書内の単語への参照を保持し、表層形、品詞情報、位置情報などへの
+//! アクセスを提供します。
+
 use std::ops::Range;
 
 use crate::dictionary::DictionaryInnerRef;
@@ -6,7 +11,16 @@ use crate::dictionary::{word_idx::WordIdx, LexType};
 use crate::tokenizer::lattice::Node;
 use crate::tokenizer::worker::Worker;
 
-/// Resultant token.
+/// 形態素解析の結果トークン
+///
+/// このトークンは[`Worker`]への軽量な参照であり、実際のデータは
+/// Workerが保持しています。トークンはWorkerが生存している間のみ有効です。
+///
+/// トークンからは以下の情報にアクセスできます：
+/// - 表層形（元のテキスト中の文字列）
+/// - 品詞などの素性情報
+/// - 文字位置およびバイト位置
+/// - 単語コストおよび累積コスト
 pub struct Token<'w> {
     worker: &'w Worker,
     index: usize,
@@ -18,6 +32,12 @@ impl<'w> Token<'w> {
         Self { worker, index }
     }
 
+    /// トークンの文字単位の位置範囲を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの開始位置から終了位置までの文字単位の範囲を返します。
+    ///
     /// Gets the position range of the token in characters.
     #[inline(always)]
     pub fn range_char(&self) -> Range<usize> {
@@ -25,6 +45,12 @@ impl<'w> Token<'w> {
         node.start_word..*end_word
     }
 
+    /// トークンのバイト単位の位置範囲を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの開始位置から終了位置までのバイト単位の範囲を返します。
+    ///
     /// Gets the position range of the token in bytes.
     #[inline(always)]
     pub fn range_byte(&self) -> Range<usize> {
@@ -33,12 +59,25 @@ impl<'w> Token<'w> {
         sent.byte_position(node.start_word)..sent.byte_position(*end_word)
     }
 
+    /// トークンの表層形（元のテキスト中の文字列）を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの表層形の文字列参照を返します。
+    ///
     /// Gets the surface string of the token.
     #[inline(always)]
     pub fn surface(&self) -> &'w str {
         let sent = &self.worker.sent;
         &sent.raw()[self.range_byte()]
     }
+
+    /// トークンの単語インデックスを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 辞書内の単語を一意に識別する[`WordIdx`]を返します。
+    ///
     /// Gets the word index of the token.
     #[inline(always)]
     pub fn word_idx(&self) -> WordIdx {
@@ -46,6 +85,13 @@ impl<'w> Token<'w> {
         node.word_idx()
     }
 
+    /// トークンの素性（品詞などの情報）を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの素性情報を表す文字列参照を返します。
+    /// 素性の形式は辞書によって異なります。
+    ///
     /// Gets the feature string of the token.
     #[inline(always)]
     pub fn feature(&self) -> &str {
@@ -57,12 +103,24 @@ impl<'w> Token<'w> {
         }
     }
 
+    /// トークンが由来する辞書のタイプを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// システム辞書、ユーザー辞書、未知語のいずれかを示す[`LexType`]を返します。
+    ///
     /// Gets the lexicon type where the token is from.
     #[inline(always)]
     pub fn lex_type(&self) -> LexType {
         self.word_idx().lex_type
     }
 
+    /// トークンノードの左文脈IDを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト計算に使用される左文脈IDを返します。
+    ///
     /// Gets the left id of the token's node.
     #[inline(always)]
     pub fn left_id(&self) -> u16 {
@@ -70,6 +128,12 @@ impl<'w> Token<'w> {
         node.left_id
     }
 
+    /// トークンノードの右文脈IDを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト計算に使用される右文脈IDを返します。
+    ///
     /// Gets the right id of the token's node.
     #[inline(always)]
     pub fn right_id(&self) -> u16 {
@@ -77,6 +141,12 @@ impl<'w> Token<'w> {
         node.right_id
     }
 
+    /// トークンノードの単語コストを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 単語の生起コストを返します。値が低いほど出現しやすい単語です。
+    ///
     /// Gets the word cost of the token's node.
     #[inline(always)]
     pub fn word_cost(&self) -> i16 {
@@ -89,6 +159,12 @@ impl<'w> Token<'w> {
         }
     }
 
+    /// 文頭からこのトークンノードまでの累積コストを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// BOS（文頭）からこのトークンまでのパス全体の累積コストを返します。
+    ///
     /// Gets the total cost from BOS to the token's node.
     #[inline(always)]
     pub fn total_cost(&self) -> i32 {
@@ -96,6 +172,12 @@ impl<'w> Token<'w> {
         node.min_cost
     }
 
+    /// このトークンビューを所有型の[`TokenBuf`]に変換します。
+    ///
+    /// # 戻り値
+    ///
+    /// このトークンのすべての情報を含む所有型の[`TokenBuf`]を返します。
+    /// スレッド間でトークン情報を送信したり、長期保存する際に有用です。
     pub fn to_buf(&self) -> TokenBuf {
         TokenBuf {
             surface: self.surface().to_string(),
@@ -129,6 +211,12 @@ impl std::fmt::Debug for Token<'_> {
     }
 }
 
+/// N-best解析パス内のトークンへの軽量ビュー
+///
+/// [`Token`]と同様に、このトークンは[`Worker`]を借用する軽量なビューです。
+/// [`NbestTokenIter`]によって生成されます。N-best解析では複数の候補パスが
+/// 生成されますが、このトークンはその中の一つのパス内のトークンを表現します。
+///
 /// A lightweight view of a token within an N-best path.
 ///
 /// Similar to `Token`, this struct is a lightweight view that borrows the `Worker`.
@@ -167,12 +255,25 @@ impl<'w> NbestToken<'w> {
         }
     }
 
+    /// トークンの表層形（元のテキスト中の文字列）を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの表層形の文字列参照を返します。
+    ///
     /// Gets the surface string of the token.
     #[inline(always)]
     pub fn surface(&self) -> &'w str {
         &self.worker.sent.raw()[self.range_byte()]
     }
 
+    /// トークンの素性（品詞などの情報）を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの素性情報を表す文字列参照を返します。
+    /// 素性の形式は辞書によって異なります。
+    ///
     /// Gets the feature string of the token.
     #[inline(always)]
     pub fn feature(&self) -> &'w str {
@@ -184,12 +285,24 @@ impl<'w> NbestToken<'w> {
         }
     }
 
+    /// トークンの文字単位の位置範囲を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの開始位置から終了位置までの文字単位の範囲を返します。
+    ///
     /// Gets the position range of the token in characters.
     #[inline(always)]
     pub fn range_char(&self) -> Range<usize> {
         self.node().start_word..self.end_word()
     }
 
+    /// トークンのバイト単位の位置範囲を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンの開始位置から終了位置までのバイト単位の範囲を返します。
+    ///
     /// Gets the position range of the token in bytes.
     #[inline(always)]
     pub fn range_byte(&self) -> Range<usize> {
@@ -197,30 +310,60 @@ impl<'w> NbestToken<'w> {
         sent.byte_position(self.node().start_word)..sent.byte_position(self.end_word())
     }
 
+    /// トークンの単語インデックスを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 辞書内の単語を一意に識別する[`WordIdx`]を返します。
+    ///
     /// Gets the word index of the token.
     #[inline(always)]
     pub fn word_idx(&self) -> WordIdx {
         self.node().word_idx()
     }
 
+    /// トークンが由来する辞書のタイプを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// システム辞書、ユーザー辞書、未知語のいずれかを示す[`LexType`]を返します。
+    ///
     /// Gets the lexicon type where the token is from.
     #[inline(always)]
     pub fn lex_type(&self) -> LexType {
         self.word_idx().lex_type
     }
 
+    /// トークンノードの左文脈IDを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト計算に使用される左文脈IDを返します。
+    ///
     /// Gets the left connection ID of the token's node.
     #[inline(always)]
     pub fn left_id(&self) -> u16 {
         self.node().left_id
     }
 
+    /// トークンノードの右文脈IDを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト計算に使用される右文脈IDを返します。
+    ///
     /// Gets the right connection ID of the token's node.
     #[inline(always)]
     pub fn right_id(&self) -> u16 {
         self.node().right_id
     }
 
+    /// トークンノードの単語コストを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 単語の生起コストを返します。値が低いほど出現しやすい単語です。
+    ///
     /// Gets the word cost of the token's node.
     #[inline(always)]
     pub fn word_cost(&self) -> i16 {
@@ -228,6 +371,13 @@ impl<'w> NbestToken<'w> {
         dict.word_param(self.word_idx()).word_cost
     }
 
+    /// 文頭からこのトークンノードまでの累積コストを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// BOS（文頭）からこのトークンまでのパス全体の累積コストを返します。
+    /// この値は前向きビタビパスで計算されます。
+    ///
     /// Gets the total cost from the beginning of the sentence (BOS)
     /// to this token's node, calculated during the forward Viterbi pass.
     #[inline(always)]
@@ -235,6 +385,13 @@ impl<'w> NbestToken<'w> {
         self.node().min_cost
     }
 
+    /// このトークンビューを所有型の[`TokenBuf`]に変換します。
+    ///
+    /// # 戻り値
+    ///
+    /// このトークンのすべての情報を含む所有型の[`TokenBuf`]を返します。
+    /// スレッド間でトークン情報を送信したり、長期保存する際に有用です。
+    ///
     /// Converts this token view into an owned `TokenBuf`.
     pub fn to_buf(&self) -> TokenBuf {
         TokenBuf {
@@ -269,6 +426,11 @@ impl std::fmt::Debug for NbestToken<'_> {
     }
 }
 
+/// トークンのイテレータ
+///
+/// 形態素解析の結果得られたトークン列を順次取得するためのイテレータです。
+/// 前方および後方からの走査をサポートしています（[`DoubleEndedIterator`]を実装）。
+///
 /// Iterator of tokens.
 pub struct TokenIter<'w> {
     worker: &'w Worker,
@@ -316,6 +478,11 @@ impl<'w> DoubleEndedIterator for TokenIter<'w> {
     }
 }
 
+/// 特定のN-best解析パス内のトークンをイテレートするイテレータ
+///
+/// N-best解析で得られた複数の候補パスのうち、特定のパス（`path_idx`で指定）に
+/// 含まれるトークンを順次取得するためのイテレータです。
+///
 /// An iterator over tokens in a specific N-best path.
 pub struct NbestTokenIter<'w> {
     worker: &'w Worker,
@@ -347,6 +514,12 @@ impl<'w> Iterator for NbestTokenIter<'w> {
     }
 }
 
+/// 所有型の自己完結したトークン
+///
+/// このトークンは[`Token`]の所有型版です。形態素解析の結果を長期保存したり、
+/// スレッド間で送信する際に有用です。すべてのトークン情報を自身で保持するため、
+/// [`Worker`]への参照が不要です。
+///
 /// An owned, self-contained token.
 ///
 /// This struct is the owned counterpart to [`Token`].
@@ -354,15 +527,54 @@ impl<'w> Iterator for NbestTokenIter<'w> {
 /// sending them across threads.
 #[derive(Debug, Clone)]
 pub struct TokenBuf {
+    /// トークンの表層形（元のテキスト中の文字列）
+    ///
+    /// The surface string of the token.
     pub surface: String,
+
+    /// トークンの素性情報（品詞など）
+    ///
+    /// The feature string of the token.
     pub feature: String,
+
+    /// トークンの文字単位の位置範囲
+    ///
+    /// The position range of the token in characters.
     pub range_char: Range<usize>,
+
+    /// トークンのバイト単位の位置範囲
+    ///
+    /// The position range of the token in bytes.
     pub range_byte: Range<usize>,
+
+    /// トークンが由来する辞書のタイプ
+    ///
+    /// The lexicon type where the token is from.
     pub lex_type: LexType,
+
+    /// トークンの単語インデックス
+    ///
+    /// The word index of the token.
     pub word_id: WordIdx,
+
+    /// トークンノードの左文脈ID
+    ///
+    /// The left connection ID of the token's node.
     pub left_id: u16,
+
+    /// トークンノードの右文脈ID
+    ///
+    /// The right connection ID of the token's node.
     pub right_id: u16,
+
+    /// トークンノードの単語コスト
+    ///
+    /// The word cost of the token's node.
     pub word_cost: i16,
+
+    /// 文頭からこのトークンノードまでの累積コスト
+    ///
+    /// The total cost from BOS to the token's node.
     pub total_cost: i32,
 }
 

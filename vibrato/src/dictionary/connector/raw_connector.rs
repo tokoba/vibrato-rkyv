@@ -1,3 +1,8 @@
+//! 生の接続コスト計算器の実装
+//!
+//! このモジュールは、バイグラム情報を使用してメモリ効率的に
+//! 接続コストを計算するコネクターを提供します。
+
 pub mod scorer;
 
 use std::io::{prelude::*, BufReader, Read};
@@ -14,10 +19,13 @@ use crate::errors::{Result, VibratoError};
 use crate::num::U31;
 use crate::utils;
 
-/// Since only signed integers exist for vector types, the invalid feature id is set to U31::MAX so
-/// that the value does not become a negative value.
+/// 無効な特徴IDの定数
+///
+/// ベクトル型には符号付き整数のみが存在するため、値が負にならないように
+/// 無効な特徴IDは U31::MAX に設定されます。
 pub const INVALID_FEATURE_ID: U31 = U31::MAX;
 
+/// 生の接続コスト計算器
 #[derive(Archive, Serialize, Deserialize)]
 pub struct RawConnector {
     right_feat_ids: Vec<U31x8>,
@@ -27,6 +35,14 @@ pub struct RawConnector {
 }
 
 impl RawConnector {
+    /// 新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `right_feat_ids` - 右特徴ID
+    /// * `left_feat_ids` - 左特徴ID
+    /// * `feat_template_size` - 特徴テンプレートのサイズ
+    /// * `scorer` - スコアラー
     pub const fn new(
         right_feat_ids: Vec<U31x8>,
         left_feat_ids: Vec<U31x8>,
@@ -41,7 +57,21 @@ impl RawConnector {
         }
     }
 
-    /// Creates a new instance from `bigram.right`, `bigram.left`, and `bigram.cost`.
+    /// `bigram.right`、`bigram.left`、`bigram.cost` から新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `right_rdr` - `bigram.right` ファイルのリーダー
+    /// * `left_rdr` - `bigram.left` ファイルのリーダー
+    /// * `cost_rdr` - `bigram.cost` ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(RawConnector)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_readers<R, L, C>(right_rdr: R, left_rdr: L, cost_rdr: C) -> Result<Self>
     where
         R: Read,
@@ -162,7 +192,7 @@ impl ConnectorCost for RawConnector {
     }
 }
 
-/// Builder for components of [`RawConnector`] using simple data structures.
+/// シンプルなデータ構造を使用した [`RawConnector`] のコンポーネント用ビルダー
 pub struct RawConnectorBuilder {
     pub right_feat_ids_tmp: Vec<Vec<U31>>,
     pub left_feat_ids_tmp: Vec<Vec<U31>>,
@@ -171,6 +201,7 @@ pub struct RawConnectorBuilder {
 }
 
 impl RawConnectorBuilder {
+    /// 新しいインスタンスを作成します。
     pub const fn new(
         right_feat_ids_tmp: Vec<Vec<U31>>,
         left_feat_ids_tmp: Vec<Vec<U31>>,
@@ -185,7 +216,21 @@ impl RawConnectorBuilder {
         }
     }
 
-    /// Creates a new instance from `bigram.right`, `bigram.left`, and `bigram.cost`.
+    /// `bigram.right`、`bigram.left`、`bigram.cost` から新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `right_rdr` - `bigram.right` ファイルのリーダー
+    /// * `left_rdr` - `bigram.left` ファイルのリーダー
+    /// * `cost_rdr` - `bigram.cost` ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(RawConnectorBuilder)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_readers<R, L, C>(right_rdr: R, left_rdr: L, cost_rdr: C) -> Result<Self>
     where
         R: Read,
@@ -246,9 +291,9 @@ impl RawConnectorBuilder {
         ))
     }
 
-    /// Parses a line in file `bigram.right/left`, returning the entry id and a sequence of feature
-    /// ids. If a feature is not stored in the given id map, `INVALID_FEATURE_ID` is used as the
-    /// feature id.
+    /// `bigram.right/left` ファイルの行をパースし、エントリIDと特徴IDのシーケンスを返します。
+    ///
+    /// 特徴が指定されたIDマップに格納されていない場合、`INVALID_FEATURE_ID` が特徴IDとして使用されます。
     fn parse_features(
         line: &str,
         id_map: &HashMap<String, U31>,
@@ -271,19 +316,18 @@ impl RawConnectorBuilder {
         Err(VibratoError::invalid_format(name, msg))
     }
 
-    /// Parses a line in file `bigram.cost`, returning the ids of right and left features and the
-    /// connection cost.
+    /// `bigram.cost` ファイルの行をパースし、右特徴と左特徴のIDおよび接続コストを返します。
     ///
-    /// If a feature is already stored in the given id map, the assigned id is returned;
-    /// otherwise, the feature is inserted into the map, and a new id is returned.
+    /// 特徴が既に指定されたIDマップに格納されている場合は、割り当てられたIDが返されます。
+    /// そうでない場合は、特徴がマップに挿入され、新しいIDが返されます。
     ///
-    /// # Examples
+    /// # 例
     ///
-    /// * Input
+    /// * 入力
     ///   * `line = B3:名詞,普通名詞,一般/名詞,普通名詞,サ変可能\t-520`
     ///   * `right_id_map = {"B3:名詞,普通名詞,一般": 0, "B2:名詞,固有名詞": 1}`
     ///   * `left_id_map = {"名詞,普通名詞,一般": 0}`
-    /// * Output
+    /// * 出力
     ///   * `(right_id, left_id, cost) = (0, 1, -520)`
     ///   * `right_id_map = {"B3:名詞,普通名詞,一般": 0, "B2:名詞,固有名詞": 1}`
     ///   * `left_id_map = {"名詞,普通名詞,一般": 0, "名詞,普通名詞,サ変可能": 1}`

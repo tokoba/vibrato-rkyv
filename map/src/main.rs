@@ -1,3 +1,8 @@
+//! 接続IDを並び替えマッピングで編集するユーティリティ
+//!
+//! このバイナリは、システム辞書内の接続IDを、
+//! 並び替えマッピングファイル（lmap、rmap）を使用して編集します。
+
 use std::error::Error;
 use std::fs::File;
 use std::io::{prelude::*, BufReader};
@@ -9,6 +14,7 @@ use rkyv::{access, deserialize, rancor::Error as RError};
 
 use clap::Parser;
 
+/// コマンドライン引数
 #[derive(Parser, Debug)]
 #[clap(
     name = "map",
@@ -29,6 +35,14 @@ struct Args {
     sysdic_out: PathBuf,
 }
 
+/// メイン関数
+///
+/// システム辞書をロードし、並び替えマッピングを適用して、
+/// 新しい辞書ファイルとして出力します。
+///
+/// # 戻り値
+///
+/// 実行が成功した場合は `Ok(())`、エラーが発生した場合はエラー情報
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
@@ -71,6 +85,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// マッピングファイルをロードする
+///
+/// タブ区切りファイルから接続IDマッピングを読み込みます。
+///
+/// # 引数
+///
+/// * `rdr` - マッピングファイルのリーダー
+///
+/// # 戻り値
+///
+/// 読み込まれた接続IDのベクトル、またはエラー
 fn load_mapping<R>(rdr: R) -> Result<Vec<u16>, Box<dyn Error>>
 where
     R: Read,

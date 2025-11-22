@@ -1,3 +1,9 @@
+//! Sudachi辞書を用いた形態素解析のベンチマーク
+//!
+//! Sudachi-rsライブラリと各種辞書(small/core/full)を使用して、
+//! 異なる分割モード(A/B/C)での形態素解析速度を計測します。
+//! Vibratoとの比較用ベンチマークです。
+
 use std::fs::File;
 use std::{fs, io};
 use std::path::Path;

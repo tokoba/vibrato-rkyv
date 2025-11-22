@@ -1,4 +1,32 @@
-//! Viterbi-based tokenizer.
+//! Viterbiアルゴリズムに基づくトークナイザー。
+//!
+//! このモジュールは、日本語形態素解析のためのメイントークナイザーを提供します。
+//! Viterbiアルゴリズムを使用して、入力文を最適な形態素列に分割します。
+//!
+//! # 主要な構造体
+//!
+//! - [`Tokenizer`]: 形態素解析を実行するメイントークナイザー構造体
+//! - [`Worker`]: トークナイザーのワーカー。実際の解析処理を行う
+//!
+//! # 例
+//!
+//! ```no_run
+//! use vibrato::Tokenizer;
+//! use vibrato::Dictionary;
+//!
+//! let dict = Dictionary::open("path/to/dict")?;
+//! let tokenizer = Tokenizer::new(dict);
+//! let mut worker = tokenizer.new_worker();
+//!
+//! worker.reset_sentence("自然言語処理");
+//! worker.tokenize();
+//!
+//! for i in 0..worker.num_tokens() {
+//!     let token = worker.token(i);
+//!     println!("{}", token.surface());
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
 pub(crate) mod lattice;
 mod nbest_generator;
 pub mod worker;
@@ -13,7 +41,30 @@ use crate::sentence::Sentence;
 use crate::tokenizer::lattice::{Lattice, LatticeNBest};
 use crate::tokenizer::worker::Worker;
 
-/// Tokenizer.
+/// 形態素解析を行うトークナイザー。
+///
+/// `Tokenizer`は、Viterbiアルゴリズムを使用して日本語テキストを形態素に分割します。
+/// 辞書データを保持し、複数の[`Worker`]インスタンスを生成して並列処理を行うことができます。
+///
+/// # フィールド
+///
+/// - `dict`: 形態素解析に使用する辞書データへの参照
+/// - `space_cateset`: MeCab互換モードでのスペース文字のカテゴリセット
+/// - `max_grouping_len`: 未知語の最大グルーピング長
+///
+/// # 例
+///
+/// ```no_run
+/// use vibrato::{Dictionary, Tokenizer};
+///
+/// let dict = Dictionary::open("path/to/dict")?;
+/// let tokenizer = Tokenizer::new(dict);
+/// let mut worker = tokenizer.new_worker();
+///
+/// worker.reset_sentence("形態素解析");
+/// worker.tokenize();
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Clone)]
 pub struct Tokenizer {
     dict: Arc<Dictionary>,
@@ -23,14 +74,33 @@ pub struct Tokenizer {
 }
 
 impl Tokenizer {
-    /// Creates a new tokenizer.
+    /// 新しいトークナイザーを作成します。
     ///
-    /// The dictionary is moved into the tokenizer. If you need to share the dictionary
-    /// among multiple tokenizers, use [`Tokenizer::from_shared_dictionary`].
+    /// 辞書はトークナイザーに所有権が移動します。複数のトークナイザー間で辞書を共有する
+    /// 必要がある場合は、[`Tokenizer::from_shared_dictionary`]を使用してください。
     ///
-    /// **Note:** When using `Dictionary::from_zstd` with the `legacy` feature, this
-    /// function's move semantics may cause the current thread to block and wait for
-    /// a background caching thread to finish when the tokenizer is dropped.
+    /// **注意:** `legacy`機能を有効にして`Dictionary::from_zstd`を使用している場合、
+    /// この関数のムーブセマンティクスにより、トークナイザーがドロップされる際に、
+    /// バックグラウンドのキャッシングスレッドが完了するまで現在のスレッドが
+    /// ブロックされる可能性があります。
+    ///
+    /// # 引数
+    ///
+    /// * `dict` - 形態素解析に使用する辞書
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい`Tokenizer`インスタンス
+    ///
+    /// # 例
+    ///
+    /// ```no_run
+    /// use vibrato::{Dictionary, Tokenizer};
+    ///
+    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let tokenizer = Tokenizer::new(dict);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn new(dict: Dictionary) -> Self {
         Self {
             dict: Arc::new(dict),
@@ -39,7 +109,15 @@ impl Tokenizer {
         }
     }
 
-    /// Creates a new tokenizer from `DictionaryInner`.
+    /// `DictionaryInner`から新しいトークナイザーを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `dict` - 内部辞書データ
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい`Tokenizer`インスタンス
     pub fn from_inner(dict: DictionaryInner) -> Self {
         Self {
             dict: Arc::new(Dictionary::Owned { dict: Arc::new(dict), _caching_handle: None }),
@@ -48,11 +126,30 @@ impl Tokenizer {
         }
     }
 
-    /// Creates a new Tokenizer from a shared Dictionary.
+    /// 共有された辞書から新しいトークナイザーを作成します。
     ///
-    // This is useful for multi-threaded scenarios where multiple
-    /// Tokenizer instances need to share the same dictionary data
-    /// without reloading it.
+    /// これは、複数のトークナイザーインスタンスが辞書データを再読み込みすることなく
+    /// 同じ辞書データを共有する必要があるマルチスレッドシナリオで便利です。
+    ///
+    /// # 引数
+    ///
+    /// * `dict` - 共有される辞書への`Arc`参照
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい`Tokenizer`インスタンス
+    ///
+    /// # 例
+    ///
+    /// ```no_run
+    /// use std::sync::Arc;
+    /// use vibrato::{Dictionary, Tokenizer};
+    ///
+    /// let dict = Arc::new(Dictionary::open("path/to/dict")?);
+    /// let tokenizer1 = Tokenizer::from_shared_dictionary(dict.clone());
+    /// let tokenizer2 = Tokenizer::from_shared_dictionary(dict.clone());
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn from_shared_dictionary(dict: Arc<Dictionary>) -> Self {
         Self {
             dict,
@@ -61,14 +158,32 @@ impl Tokenizer {
         }
     }
 
-    /// Ignores spaces from tokens.
+    /// トークンからスペースを無視するかどうかを設定します。
     ///
-    /// This option is for compatibility with MeCab.
-    /// Enable this if you want to obtain the same results as MeCab.
+    /// このオプションはMeCabとの互換性のためのものです。
+    /// MeCabと同じ結果を得たい場合は、これを有効にしてください。
     ///
-    /// # Errors
+    /// # 引数
     ///
-    /// [`VibratoError`] is returned when category `SPACE` is not defined in the input dictionary.
+    /// * `yes` - `true`の場合、スペース文字をトークンから除外します
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が適用された`Tokenizer`インスタンス
+    ///
+    /// # エラー
+    ///
+    /// 入力辞書に`SPACE`カテゴリが定義されていない場合、[`VibratoError`]が返されます。
+    ///
+    /// # 例
+    ///
+    /// ```no_run
+    /// use vibrato::{Dictionary, Tokenizer};
+    ///
+    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let tokenizer = Tokenizer::new(dict).ignore_space(true)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn ignore_space(mut self, yes: bool) -> Result<Self> {
         if yes {
             let cate_id = match &*self.dict {
@@ -89,16 +204,32 @@ impl Tokenizer {
     }
 
 
-    /// Specifies the maximum grouping length for unknown words.
-    /// By default, the length is infinity.
+    /// 未知語の最大グルーピング長を指定します。
     ///
-    /// This option is for compatibility with MeCab.
-    /// Specifies the argument with `24` if you want to obtain the same results as MeCab.
+    /// デフォルトでは、長さは無限です。
     ///
-    /// # Arguments
+    /// このオプションはMeCabとの互換性のためのものです。
+    /// MeCabと同じ結果を得たい場合は、引数に`24`を指定してください。
     ///
-    ///  - `max_grouping_len`: The maximum grouping length for unknown words.
-    ///    The default value is 0, indicating the infinity length.
+    /// # 引数
+    ///
+    /// * `max_grouping_len` - 未知語の最大グルーピング長。
+    ///   デフォルト値は0で、無限の長さを示します。
+    ///
+    /// # 戻り値
+    ///
+    /// 設定が適用された`Tokenizer`インスタンス
+    ///
+    /// # 例
+    ///
+    /// ```no_run
+    /// use vibrato::{Dictionary, Tokenizer};
+    ///
+    /// let dict = Dictionary::open("path/to/dict")?;
+    /// // MeCab互換モード
+    /// let tokenizer = Tokenizer::new(dict).max_grouping_len(24);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub const fn max_grouping_len(mut self, max_grouping_len: usize) -> Self {
         if max_grouping_len != 0 {
             self.max_grouping_len = Some(max_grouping_len);
@@ -108,7 +239,11 @@ impl Tokenizer {
         self
     }
 
-    /// Gets the reference to the dictionary.
+    /// 辞書への参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 辞書内部データへの参照
     pub(crate) fn dictionary<'a>(&'a self) -> DictionaryInnerRef<'a> {
         match &*self.dict {
             Dictionary::Archived(archived_dict) => DictionaryInnerRef::Archived(archived_dict),
@@ -116,11 +251,41 @@ impl Tokenizer {
         }
     }
 
-    /// Creates a new worker.
+    /// 新しいワーカーを作成します。
+    ///
+    /// ワーカーは実際の形態素解析処理を実行するために使用されます。
+    /// 各ワーカーは独立したラティス構造を保持するため、複数のワーカーを
+    /// 並列に使用して同時に複数の文を解析できます。
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい[`Worker`]インスタンス
+    ///
+    /// # 例
+    ///
+    /// ```no_run
+    /// use vibrato::{Dictionary, Tokenizer};
+    ///
+    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let tokenizer = Tokenizer::new(dict);
+    /// let mut worker = tokenizer.new_worker();
+    ///
+    /// worker.reset_sentence("形態素解析");
+    /// worker.tokenize();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn new_worker(&self) -> Worker {
         Worker::new(self.clone())
     }
 
+    /// ラティス構造を構築します。
+    ///
+    /// 入力文に対してViterbiアルゴリズム用のラティスを構築します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - 構築するラティス構造
     pub(crate) fn build_lattice(&self, sent: &Sentence, lattice: &mut Lattice) {
         match &*self.dict {
             Dictionary::Archived(archived_dict) => match archived_dict.connector() {
@@ -136,6 +301,15 @@ impl Tokenizer {
         }
     }
 
+    /// N-best解析用のラティス構造を構築します。
+    ///
+    /// 入力文に対してN-best解析用のラティスを構築します。
+    /// 通常のラティスとは異なり、複数の解析結果を保持できます。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - 構築するN-best用ラティス構造
     pub(crate) fn build_lattice_nbest(&self, sent: &Sentence, lattice: &mut LatticeNBest) {
         match &*self.dict {
             Dictionary::Archived(archived_dict) => match archived_dict.connector() {
@@ -151,6 +325,16 @@ impl Tokenizer {
         }
     }
 
+    /// ラティス構造の内部構築処理。
+    ///
+    /// コネクタの型に応じてラティスを構築します。
+    /// MeCab互換モードの場合、スペース文字の処理も行います。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - 構築するラティス構造
+    /// * `connector` - 接続コスト計算用のコネクタ
     fn build_lattice_inner<C>(&self, sent: &Sentence, lattice: &mut Lattice, connector: &C)
     where
         C: ConnectorCost,
@@ -198,6 +382,16 @@ impl Tokenizer {
         lattice.insert_eos(start_node, connector);
     }
 
+    /// N-best解析用ラティス構造の内部構築処理。
+    ///
+    /// コネクタの型に応じてN-best用ラティスを構築します。
+    /// MeCab互換モードの場合、スペース文字の処理も行います。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - 構築するN-best用ラティス構造
+    /// * `connector` - 接続コスト計算用のコネクタ
     fn build_lattice_inner_nbest<C>(&self, sent: &Sentence, lattice: &mut LatticeNBest, connector: &C)
     where
         C: ConnectorCost,
@@ -308,6 +502,17 @@ macro_rules! add_lattice_edges_logic {
 }
 
 impl Tokenizer {
+    /// ラティスにエッジを追加します。
+    ///
+    /// 辞書の型（アーカイブ版または所有版）に応じて適切な内部メソッドを呼び出します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
     fn add_lattice_edges<C>(
         &self,
         sent: &Sentence,
@@ -328,6 +533,17 @@ impl Tokenizer {
         }
     }
 
+    /// N-best用ラティスにエッジを追加します。
+    ///
+    /// 辞書の型（アーカイブ版または所有版）に応じて適切な内部メソッドを呼び出します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するN-best用ラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
     fn add_lattice_edges_nbest<C>(
         &self,
         sent: &Sentence,
@@ -348,6 +564,19 @@ impl Tokenizer {
         }
     }
 
+    /// アーカイブ版辞書を使用してラティスにエッジを追加します。
+    ///
+    /// ユーザー辞書とシステム辞書から単語を検索し、
+    /// 未知語ハンドラを使用して未知語も処理します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
+    /// * `dict` - アーカイブ版辞書
     fn add_lattice_edges_archived<C>(
         &self,
         sent: &Sentence,
@@ -370,6 +599,19 @@ impl Tokenizer {
         )
     }
 
+    /// 所有版辞書を使用してラティスにエッジを追加します。
+    ///
+    /// ユーザー辞書とシステム辞書から単語を検索し、
+    /// 未知語ハンドラを使用して未知語も処理します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
+    /// * `dict` - 所有版辞書
     fn add_lattice_edges_owned<C>(
         &self,
         sent: &Sentence,
@@ -392,6 +634,19 @@ impl Tokenizer {
         )
     }
 
+    /// アーカイブ版辞書を使用してN-best用ラティスにエッジを追加します。
+    ///
+    /// ユーザー辞書とシステム辞書から単語を検索し、
+    /// 未知語ハンドラを使用して未知語も処理します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するN-best用ラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
+    /// * `dict` - アーカイブ版辞書
     fn add_lattice_edges_archived_nbest<C>(
         &self,
         sent: &Sentence,
@@ -414,6 +669,19 @@ impl Tokenizer {
         )
     }
 
+    /// 所有版辞書を使用してN-best用ラティスにエッジを追加します。
+    ///
+    /// ユーザー辞書とシステム辞書から単語を検索し、
+    /// 未知語ハンドラを使用して未知語も処理します。
+    ///
+    /// # 引数
+    ///
+    /// * `sent` - 入力文
+    /// * `lattice` - エッジを追加するN-best用ラティス
+    /// * `start_node` - ノードの開始位置（スペースを含む）
+    /// * `start_word` - 単語の開始位置（スペースを除く）
+    /// * `connector` - 接続コスト計算用のコネクタ
+    /// * `dict` - 所有版辞書
     fn add_lattice_edges_owned_nbest<C>(
         &self,
         sent: &Sentence,

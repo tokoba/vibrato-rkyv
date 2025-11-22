@@ -1,10 +1,15 @@
+//! 接続IDマッパー
+//!
+//! このモジュールは、接続IDを効率的な順序に並べ替えるための
+//! マッパーと関連機能を提供します。
+
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::errors::{Result, VibratoError};
 
 use crate::common::BOS_EOS_CONNECTION_ID;
 
-/// Mapper for connection ids.
+/// 接続IDのマッパー
 #[derive(Archive, Serialize, Deserialize)]
 pub struct ConnIdMapper {
     left: Vec<u16>,
@@ -12,30 +17,36 @@ pub struct ConnIdMapper {
 }
 
 impl ConnIdMapper {
+    /// 新しいマッパーを作成します。
     pub const fn new(left: Vec<u16>, right: Vec<u16>) -> Self {
         Self { left, right }
     }
 
+    /// 左接続IDの数を取得します。
     #[inline(always)]
     pub fn num_left(&self) -> usize {
         self.left.len()
     }
 
+    /// 右接続IDの数を取得します。
     #[inline(always)]
     pub fn num_right(&self) -> usize {
         self.right.len()
     }
 
+    /// 左接続IDをマッピングします。
     #[inline(always)]
     pub fn left(&self, id: u16) -> u16 {
         self.left[usize::from(id)]
     }
 
+    /// 右接続IDをマッピングします。
     #[inline(always)]
     pub fn right(&self, id: u16) -> u16 {
         self.right[usize::from(id)]
     }
 
+    /// イテレータからマッパーを作成します。
     pub fn from_iter<L, R>(lmap: L, rmap: R) -> Result<Self>
     where
         L: IntoIterator<Item = u16>,
@@ -80,17 +91,17 @@ impl ConnIdMapper {
     }
 }
 
-/// Trained occurrence probabilities of connection ids.
+/// 学習された接続IDの出現確率
 pub type ConnIdProbs = Vec<(usize, f64)>;
 
-/// Counter to reorder mappings of connection ids.
+/// 接続IDマッピングを並べ替えるためのカウンター
 pub struct ConnIdCounter {
     lid_count: Vec<usize>,
     rid_count: Vec<usize>,
 }
 
 impl ConnIdCounter {
-    /// Creates a new counter for the matrix of `num_left \times num_right`.
+    /// `num_left × num_right` の行列用の新しいカウンターを作成します。
     pub fn new(num_left: usize, num_right: usize) -> Self {
         Self {
             lid_count: vec![0; num_left],
@@ -98,13 +109,18 @@ impl ConnIdCounter {
         }
     }
 
+    /// カウントを追加します。
     #[inline(always)]
     pub fn add(&mut self, left_id: u16, right_id: u16, num: usize) {
         self.lid_count[usize::from(left_id)] += num;
         self.rid_count[usize::from(right_id)] += num;
     }
 
-    /// Computes the probabilities of connection ids.
+    /// 接続IDの確率を計算します。
+    ///
+    /// # 戻り値
+    ///
+    /// 左接続IDと右接続IDの確率のタプル
     pub fn compute_probs(&self) -> (ConnIdProbs, ConnIdProbs) {
         let lid_count = &self.lid_count;
         let rid_count = &self.rid_count;

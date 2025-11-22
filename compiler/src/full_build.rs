@@ -1,8 +1,18 @@
+//! フルビルドモジュール
+//!
+//! このモジュールは、コーパスから辞書を一括構築する機能を提供します。
+//! モデルの訓練、辞書ファイルの生成、バイナリ辞書の構築の3つのステップを
+//! 自動的に実行し、すべての中間ファイルと最終的な辞書を生成します。
+
 use std::{fs::File, path::PathBuf};
 use clap::Parser;
 
 use crate::{build::{self, BuildError}, dictgen::{self, DictgenError, generate_dictionary_files}, train::{self, TrainError, TrainingParams}};
 
+/// フルビルドコマンドの引数
+///
+/// コーパスと各種定義ファイルから辞書を一括構築するために必要な
+/// すべての入力ファイルと設定を指定します。
 #[derive(Parser, Debug)]
 #[clap(
     name = "full-build",
@@ -58,20 +68,46 @@ pub struct Args {
     pub out_dir: PathBuf,
 }
 
+/// フルビルド処理中に発生する可能性のあるエラー
+///
+/// 訓練、辞書生成、ビルドの各フェーズで発生したエラーをラップします。
 #[derive(Debug, thiserror::Error)]
 pub enum FullBuildError {
+    /// モデル訓練中のエラー
     #[error(transparent)]
     Train(#[from] TrainError),
+    /// 辞書生成中のエラー
     #[error(transparent)]
     Dictgen(#[from] DictgenError),
+    /// 辞書ビルド中のエラー
     #[error(transparent)]
     Build(#[from] BuildError),
+    /// 入出力エラー
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// Vibratoライブラリのエラー
     #[error(transparent)]
     Vibrato(#[from] vibrato_rkyv::errors::VibratoError),
 }
 
+/// フルビルドコマンドを実行する
+///
+/// 以下の3つのステップを順次実行します:
+/// 1. コーパスからモデルを訓練
+/// 2. モデルから辞書ソースファイルを生成
+/// 3. ソースファイルからバイナリ辞書を構築
+///
+/// # 引数
+///
+/// * `args` - フルビルドコマンドの引数
+///
+/// # 戻り値
+///
+/// 成功時は`Ok(())`。すべての成果物は`args.out_dir`に出力されます。
+///
+/// # エラー
+///
+/// 各フェーズの処理やファイルの入出力に失敗した場合、`FullBuildError`を返します。
 pub fn run(args: Args) -> Result<(), FullBuildError> {
     std::fs::create_dir_all(&args.out_dir)?;
 

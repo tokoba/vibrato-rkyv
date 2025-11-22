@@ -1,4 +1,26 @@
-//! Dictionary for tokenization.
+//! トークン化のための辞書モジュール。
+//!
+//! このモジュールは、形態素解析に必要な辞書データの読み込み、構築、管理を行います。
+//! 主な機能として以下を提供します:
+//!
+//! - システム辞書とユーザー辞書の読み込み
+//! - ゼロコピーデシリアライゼーションによる高速な辞書アクセス
+//! - メモリマップドファイルによる効率的なメモリ使用
+//! - Zstandard圧縮辞書の透過的な展開とキャッシング
+//! - プリセット辞書の自動ダウンロード機能
+//!
+//! # 辞書の読み込み方法
+//!
+//! 辞書は複数の方法で読み込むことができます:
+//!
+//! - [`Dictionary::from_path`]: ファイルパスから辞書を読み込む(推奨)
+//! - [`Dictionary::read`]: リーダーから辞書を読み込む
+//! - [`Dictionary::from_zstd`]: Zstandard圧縮辞書を読み込む
+//! - [`Dictionary::from_preset_with_download`]: プリセット辞書をダウンロードして読み込む
+//!
+//! # 辞書のビルド
+//!
+//! [`SystemDictionaryBuilder`]を使用して、CSV形式のソースデータから辞書を構築できます。
 pub mod builder;
 pub(crate) mod character;
 pub(crate) mod config;
@@ -42,12 +64,12 @@ pub(crate) use crate::dictionary::lexicon::WordParam;
 #[cfg(feature = "download")]
 pub use crate::dictionary::config::PresetDictionaryKind;
 
-/// Magic bytes identifying Vibrato Tokenizer.
+/// Vibratoトークナイザーを識別するマジックバイト。
 ///
-/// The version "0.6" in this constant indicates the model format version, which is
-/// now decoupled from the crate's semantic version. This magic byte
-/// is currently not expected to be modified. This is based on the policy of maintaining
-/// backward compatibility with dictionary formats.
+/// この定数の"0.6"というバージョンは、モデルフォーマットのバージョンを示しており、
+/// クレートのセマンティックバージョンからは切り離されています。このマジックバイトは
+/// 現在変更されることは想定されていません。これは辞書フォーマットの後方互換性を
+/// 維持するポリシーに基づいています。
 pub const MODEL_MAGIC: &[u8] = b"VibratoTokenizerRkyv 0.6\n";
 
 const MODEL_MAGIC_LEN: usize = MODEL_MAGIC.len();
@@ -55,9 +77,19 @@ const RKYV_ALIGNMENT: usize = 16;
 const PADDING_LEN: usize = (RKYV_ALIGNMENT - (MODEL_MAGIC_LEN % RKYV_ALIGNMENT)) % RKYV_ALIGNMENT;
 const DATA_START: usize = MODEL_MAGIC_LEN + PADDING_LEN;
 
-/// Prefix of magic bytes for legacy bincode-based models.
+/// レガシーbincodeベースモデルのマジックバイトプレフィックス。
+///
+/// 旧バージョンのVibratoで使用されていたbincode形式の辞書ファイルを識別するための
+/// プレフィックスです。
 pub const LEGACY_MODEL_MAGIC_PREFIX: &[u8] = b"VibratoTokenizer 0.";
 
+/// グローバルキャッシュディレクトリのパス。
+///
+/// ユーザー固有のシステムキャッシュディレクトリ内の`vibrato-rkyv`サブディレクトリを指します。
+/// 各プラットフォームでの標準的なキャッシュディレクトリ:
+/// - Linux: `$XDG_CACHE_HOME/vibrato-rkyv` または `$HOME/.cache/vibrato-rkyv`
+/// - macOS: `$HOME/Library/Caches/vibrato-rkyv`
+/// - Windows: `{FOLDERID_LocalAppData}/vibrato-rkyv`
 pub static GLOBAL_CACHE_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     let path = dirs::cache_dir()?.join("vibrato-rkyv");
     fs::create_dir_all(&path).ok()?;
@@ -65,6 +97,13 @@ pub static GLOBAL_CACHE_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     Some(path)
 });
 
+/// グローバルデータディレクトリのパス。
+///
+/// ユーザー固有のローカルデータディレクトリ内の`vibrato-rkyv`サブディレクトリを指します。
+/// 各プラットフォームでの標準的なデータディレクトリ:
+/// - Linux: `$XDG_DATA_HOME/vibrato-rkyv` または `$HOME/.local/share/vibrato-rkyv`
+/// - macOS: `$HOME/Library/Application Support/vibrato-rkyv`
+/// - Windows: `{FOLDERID_LocalAppData}/vibrato-rkyv`
 pub static GLOBAL_DATA_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     let path = dirs::data_local_dir()?.join("vibrato-rkyv");
     fs::create_dir_all(&path).ok()?;
@@ -72,50 +111,69 @@ pub static GLOBAL_DATA_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     Some(path)
 });
 
+/// 辞書の読み込みモード。
+///
+/// 辞書ファイルを読み込む際の検証戦略を指定します。
+/// 安全性とパフォーマンスのトレードオフを制御できます。
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum LoadMode {
-    /// Perform validation on every load. (Safest)
+    /// 読み込むたびに完全な検証を実行します(最も安全)。
+    ///
+    /// このモードでは、辞書データの整合性を毎回検証するため、
+    /// 最も安全ですがパフォーマンスは低下します。
+    /// キャッシュファイルは作成されません。
     Validate,
-    /// Skip validation if a pre-computed hash matches. (Fastest for repeated loads)
+    /// 事前計算されたハッシュが一致する場合は検証をスキップします(繰り返しの読み込みで最速)。
+    ///
+    /// このモードでは、ファイルメタデータに基づくハッシュを使用して、
+    /// 検証済みであることを確認します。高速な読み込みが可能ですが、
+    /// ファイルが置き換えられるTOCTOU攻撃に対して脆弱です。
     TrustCache,
 }
 
-/// Specifies the caching strategy for dictionaries decompressed from a Zstandard archive.
+/// Zstandardアーカイブから展開された辞書のキャッシング戦略を指定します。
+///
+/// 辞書ファイルが圧縮されている場合、展開後のデータをどこにキャッシュするかを制御します。
 pub enum CacheStrategy {
-    /// Creates a `.cache` subdirectory in the same directory as the compressed dictionary.
+    /// 圧縮辞書と同じディレクトリに`.cache`サブディレクトリを作成します。
     ///
-    /// This strategy keeps the cache data alongside the original file.
-    /// Fails if the parent directory is not writable.
+    /// この戦略は、キャッシュデータを元のファイルと並べて保持します。
+    /// 親ディレクトリが書き込み可能でない場合は失敗します。
     Local,
 
-    /// Uses a shared, user-specific cache directory appropriate for the operating system.
+    /// オペレーティングシステムに適した、共有のユーザー固有キャッシュディレクトリを使用します。
     ///
-    /// This is a good default for most applications, especially when dictionary files might
-    /// be stored in read-only locations. The path is determined by `dirs::cache_dir()`.
+    /// ほとんどのアプリケーションに適したデフォルトの選択肢です。
+    /// 特に辞書ファイルが読み取り専用の場所に保存されている場合に有用です。
+    /// パスは`dirs::cache_dir()`によって決定されます。
     ///
-    /// | Platform | Value                             | Example                               |
+    /// | プラットフォーム | 値                             | 例                               |
     /// | -------- | --------------------------------- | ------------------------------------- |
-    /// | Linux    | `$XDG_CACHE_HOME` or `$HOME/.cache` | `/home/alice/.cache`                  |
+    /// | Linux    | `$XDG_CACHE_HOME` または `$HOME/.cache` | `/home/alice/.cache`                  |
     /// | macOS    | `$HOME/Library/Caches`            | `/Users/Alice/Library/Caches`         |
     /// | Windows  | `{FOLDERID_LocalAppData}`         | `C:\Users\Alice\AppData\Local`        |
     ///
     GlobalCache,
 
-    /// Uses a shared, user-specific data directory appropriate for the operating system.
+    /// オペレーティングシステムに適した、共有のユーザー固有データディレクトリを使用します。
     ///
-    /// This is similar to `GlobalCache` but uses a directory typically intended for persistent,
-    /// non-roaming application data. The path is determined by `dirs::data_local_dir()`.
+    /// `GlobalCache`に似ていますが、永続的で非ローミングのアプリケーションデータ用の
+    /// ディレクトリを使用します。パスは`dirs::data_local_dir()`によって決定されます。
     ///
-    /// | Platform | Value                                     | Example                               |
+    /// | プラットフォーム | 値                                     | 例                               |
     /// | -------- | ----------------------------------------- | ------------------------------------- |
-    /// | Linux    | `$XDG_DATA_HOME` or `$HOME/.local/share`  | `/home/alice/.local/share`            |
+    /// | Linux    | `$XDG_DATA_HOME` または `$HOME/.local/share`  | `/home/alice/.local/share`            |
     /// | macOS    | `$HOME/Library/Application Support`       | `/Users/Alice/Library/Application Support` |
     /// | Windows  | `{FOLDERID_LocalAppData}`                 | `C:\Users\Alice\AppData\Local`        |
     ///
     GlobalData,
 }
 
-/// Inner data of [`Dictionary`].
+/// [`Dictionary`]の内部データ。
+///
+/// 辞書の実際のデータを保持する構造体です。
+/// システム辞書、ユーザー辞書、接続コスト、文字プロパティ、未知語処理などの
+/// すべての必要なコンポーネントを含みます。
 #[derive(Archive, Serialize, Deserialize)]
 pub struct DictionaryInner {
     system_lexicon: Lexicon,
@@ -126,14 +184,23 @@ pub struct DictionaryInner {
     unk_handler: UnkHandler,
 }
 
-// Wrapper to own the memory buffer (mmap or heap) and provide access to the archived dictionary.
+/// メモリバッファ(mmapまたはヒープ)を所有し、アーカイブされた辞書へのアクセスを提供するラッパー。
+///
+/// この列挙型は、辞書データを保持するための2つの異なるメモリ戦略を表します:
+/// - `Mmap`: メモリマップドファイルによるゼロコピーアクセス
+/// - `Aligned`: ヒープ上のアライメント済みバッファ
 #[allow(dead_code)]
 enum DictBuffer {
     Mmap(Mmap),
     Aligned(AlignedVec<16>),
 }
 
-/// A read-only dictionary for tokenization, loaded via zero-copy deserialization.
+/// トークン化のための読み取り専用辞書。
+///
+/// ゼロコピーデシリアライゼーションによって読み込まれた辞書です。
+/// 2つのバリアントがあります:
+/// - `Archived`: メモリマップまたはアライメント済みバッファから直接アクセスされる辞書
+/// - `Owned`: ヒープ上に所有される辞書データ(レガシー形式の変換時などに使用)
 pub enum Dictionary {
     Archived(ArchivedDictionary),
     Owned {
@@ -142,16 +209,27 @@ pub enum Dictionary {
     },
 }
 
+/// アーカイブ形式の辞書。
+///
+/// メモリバッファとアーカイブされた辞書データへの参照を保持します。
+/// ゼロコピーアクセスを可能にし、高速な辞書参照を実現します。
 pub struct ArchivedDictionary {
     _buffer: DictBuffer,
     data: &'static ArchivedDictionaryInner,
 }
 
+/// 辞書内部データへの参照(アーカイブ版または所有版)。
+///
+/// 辞書の実装の詳細を隠蔽し、アーカイブ版と所有版の両方に対して
+/// 統一的なインターフェースを提供します。
 pub(crate) enum DictionaryInnerRef<'a> {
     Archived(&'a ArchivedDictionaryInner),
     Owned(&'a DictionaryInner),
 }
 
+/// コネクタへの参照(アーカイブ版または所有版)。
+///
+/// 接続コスト計算のために使用されるコネクタデータへの参照を提供します。
 pub(crate) enum ConnectorKindRef<'a> {
     Archived(&'a ArchivedConnectorWrapper),
     Owned(&'a ConnectorWrapper),
@@ -164,7 +242,10 @@ impl Deref for ArchivedDictionary {
     }
 }
 
-/// Type of a lexicon that contains the word.
+/// 単語を含む語彙辞書の種類。
+///
+/// 形態素解析時に使用される辞書の種類を識別します。
+/// システム辞書、ユーザー辞書、未知語の3種類があります。
 #[derive(
     Clone, Copy, Eq, PartialEq, Debug, Hash,
     Archive, Serialize, Deserialize,
@@ -176,17 +257,27 @@ impl Deref for ArchivedDictionary {
 #[repr(u8)]
 #[derive(Default)]
 pub enum LexType {
-    /// System lexicon.
+    /// システム辞書。
+    ///
+    /// 基本的な語彙を含むメインの辞書です。
     #[default]
     System,
-    /// User lexicon.
+    /// ユーザー辞書。
+    ///
+    /// ユーザーが定義した追加の語彙を含む辞書です。
     User,
-    /// Unknown words.
+    /// 未知語。
+    ///
+    /// システム辞書にもユーザー辞書にも見つからない単語です。
     Unknown,
 }
 
 impl ArchivedLexType {
-    /// Converts this [`ArchivedLexType`] into its corresponding [`LexType`].
+    /// この[`ArchivedLexType`]を対応する[`LexType`]に変換します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされた列挙値に対応するネイティブの`LexType`値。
     pub fn to_native(&self) -> LexType {
         match self {
             ArchivedLexType::System => LexType::System,
@@ -208,38 +299,66 @@ impl Drop for Dictionary {
 }
 
 impl DictionaryInner {
-    /// Gets the reference to the system lexicon.
+    /// システム辞書への参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// システム辞書(`Lexicon`)への参照。
     #[inline(always)]
     pub(crate) const fn system_lexicon(&self) -> &Lexicon {
         &self.system_lexicon
     }
 
-    /// Gets the reference to the user lexicon.
+    /// ユーザー辞書への参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// ユーザー辞書が存在する場合は`Some(&Lexicon)`、存在しない場合は`None`。
     #[inline(always)]
     pub(crate) const fn user_lexicon(&self) -> Option<&Lexicon> {
         self.user_lexicon.as_ref()
     }
 
-    /// Gets the reference to the mapper for connection ids.
+    /// 接続ID用のマッパーへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// マッパーが存在する場合は`Some(&ConnIdMapper)`、存在しない場合は`None`。
     #[allow(dead_code)]
     #[inline(always)]
     pub(crate) const fn mapper(&self) -> Option<&ConnIdMapper> {
         self.mapper.as_ref()
     }
 
-    /// Gets the reference to the character property.
+    /// 文字プロパティへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 文字プロパティ(`CharProperty`)への参照。
     #[inline(always)]
     pub(crate) const fn char_prop(&self) -> &CharProperty {
         &self.char_prop
     }
 
-    /// Gets the reference to the handler of unknown words.
+    /// 未知語ハンドラへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 未知語ハンドラ(`UnkHandler`)への参照。
     #[inline(always)]
     pub(crate) const fn unk_handler(&self) -> &UnkHandler {
         &self.unk_handler
     }
 
-    /// Gets the reference to the feature string.
+    /// 指定された単語の素性文字列への参照を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語のインデックス。辞書の種類と位置を含みます。
+    ///
+    /// # 戻り値
+    ///
+    /// 素性文字列への参照。
     #[inline(always)]
     pub fn word_feature(&self, word_idx: WordIdx) -> &str {
         match word_idx.lex_type {
@@ -249,11 +368,24 @@ impl DictionaryInner {
         }
     }
 
+    /// コネクタへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト計算に使用される`ConnectorWrapper`への参照。
     pub(crate) fn connector(&self) -> &ConnectorWrapper {
         &self.connector
     }
 
-    /// Gets the word parameter.
+    /// 指定された単語のパラメータを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語のインデックス。辞書の種類と位置を含みます。
+    ///
+    /// # 戻り値
+    ///
+    /// 単語のパラメータ(`WordParam`)。左接続ID、右接続ID、単語コストを含みます。
     #[inline(always)]
     pub(crate) fn word_param(&self, word_idx: WordIdx) -> WordParam {
         match word_idx.lex_type {
@@ -263,15 +395,15 @@ impl DictionaryInner {
         }
     }
 
-    /// Serializes the dictionary data to a writer using the `rkyv` format.
+    /// 辞書データを`rkyv`フォーマットを使用してライターにシリアライズします。
     ///
-    /// The output binary from this function is the format that `vibrato-rkyv`'s
-    /// loading methods, such as `Dictionary::from_path`, expect.
+    /// この関数の出力バイナリは、`Dictionary::from_path`などの`vibrato-rkyv`の
+    /// 読み込みメソッドが期待する形式です。
     ///
     /// # Examples
     ///
-    /// This example shows how to build a dictionary from CSV data in memory
-    /// and write the serialized binary to a file.
+    /// この例では、メモリ内のCSVデータから辞書を構築し、
+    /// シリアライズされたバイナリをファイルに書き込む方法を示します。
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -279,7 +411,7 @@ impl DictionaryInner {
     /// use std::io::Cursor;
     /// use vibrato_rkyv::dictionary::SystemDictionaryBuilder;
     ///
-    /// // Create a dictionary instance with a builder from some source data.
+    /// // ソースデータからビルダーを使用して辞書インスタンスを作成します。
     /// let dict = SystemDictionaryBuilder::from_readers(
     ///     Cursor::new("東京,名詞,地名\n"),
     ///     Cursor::new("1 1 0\n"),
@@ -287,18 +419,18 @@ impl DictionaryInner {
     ///     Cursor::new("DEFAULT,5,5,-1000\n"),
     /// )?;
     ///
-    /// // Serialize the dictionary to a file.
+    /// // 辞書をファイルにシリアライズします。
     /// let mut file = File::create("system.dic")?;
     /// dict.write(&mut file)?;
     /// # Ok(())
     /// # }
     /// ```
     ///
-    /// # Errors
+    /// # エラー
     ///
-    /// This function will return an error if:
-    /// - Writing to the underlying `writer` fails (e.g., an I/O error).
-    /// - The `rkyv` serialization process encounters an error.
+    /// この関数は以下の場合にエラーを返します:
+    /// - 基礎となる`writer`への書き込みに失敗した場合(例: I/Oエラー)。
+    /// - `rkyv`シリアライゼーションプロセスでエラーが発生した場合。
     pub fn write<W>(&self, mut wtr: W) -> Result<()>
     where
         W: Write,
@@ -320,8 +452,24 @@ impl DictionaryInner {
         Ok(())
     }
 
-    /// Resets the user dictionary from a reader.
-    /// This should be called before serializing the dictionary.
+    /// リーダーからユーザー辞書をリセットします。
+    ///
+    /// この関数は、辞書をシリアライズする前に呼び出す必要があります。
+    /// ユーザー辞書を新しいデータで置き換えるか、削除します。
+    ///
+    /// # 引数
+    ///
+    /// * `user_lexicon_rdr` - ユーザー辞書データを含むリーダー。`None`の場合、ユーザー辞書が削除されます。
+    ///
+    /// # 戻り値
+    ///
+    /// 更新された`DictionaryInner`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - ユーザー辞書の読み込みに失敗した場合。
+    /// - ユーザー辞書に無効な接続IDが含まれている場合。
     pub fn reset_user_lexicon_from_reader<R>(mut self, user_lexicon_rdr: Option<R>) -> Result<Self>
     where
         R: Read,
@@ -344,8 +492,24 @@ impl DictionaryInner {
         Ok(self)
     }
 
-    /// Edits connection ids with the given mappings.
-    /// This should be called before serializing the dictionary.
+    /// 指定されたマッピングを使用して接続IDを編集します。
+    ///
+    /// この関数は、辞書をシリアライズする前に呼び出す必要があります。
+    /// 左接続IDと右接続IDのマッピングを適用して、接続コスト行列を再構成します。
+    ///
+    /// # 引数
+    ///
+    /// * `lmap` - 左接続IDのマッピングを含むイテレータ。
+    /// * `rmap` - 右接続IDのマッピングを含むイテレータ。
+    ///
+    /// # 戻り値
+    ///
+    /// 更新された`DictionaryInner`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - マッパーの作成に失敗した場合。
     pub fn map_connection_ids_from_iter<L, R>(mut self, lmap: L, rmap: R) -> Result<Self>
     where
         L: IntoIterator<Item = u16>,
@@ -364,20 +528,28 @@ impl DictionaryInner {
 }
 
 impl Dictionary {
-    /// Creates a dictionary from `DictionaryInner`.
+    /// `DictionaryInner`から辞書を作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `dict` - 辞書の内部データ。
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい`Dictionary`インスタンス。
     pub fn from_inner(dict: DictionaryInner) -> Self {
         Self::Owned{ dict: Arc::new(dict), _caching_handle: None }
     }
 
-    /// Serializes the dictionary data to a writer using the `rkyv` format.
+    /// 辞書データを`rkyv`フォーマットを使用してライターにシリアライズします。
     ///
-    /// The output binary from this function is the format that `vibrato-rkyv`'s
-    /// loading methods, such as `Dictionary::from_path`, expect.
+    /// この関数の出力バイナリは、`Dictionary::from_path`などの`vibrato-rkyv`の
+    /// 読み込みメソッドが期待する形式です。
     ///
     /// # Examples
     ///
-    /// This example shows how to build a dictionary from CSV data in memory
-    /// and write the serialized binary to a file.
+    /// この例では、メモリ内のCSVデータから辞書を構築し、
+    /// シリアライズされたバイナリをファイルに書き込む方法を示します。
     ///
     /// ```no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -385,7 +557,7 @@ impl Dictionary {
     /// use std::io::Cursor;
     /// use vibrato_rkyv::{Dictionary, SystemDictionaryBuilder};
     ///
-    /// // Create a dictionary instance with a builder from some source data.
+    /// // ソースデータからビルダーを使用して辞書インスタンスを作成します。
     /// let dict = SystemDictionaryBuilder::from_readers(
     ///     Cursor::new("東京,名詞,地名\n"),
     ///     Cursor::new("1 1 0\n"),
@@ -395,22 +567,22 @@ impl Dictionary {
     ///
     /// let dict = Dictionary::from_inner(dict);
     ///
-    /// // Serialize the dictionary to a file.
+    /// // 辞書をファイルにシリアライズします。
     /// let mut file = File::create("system.dic")?;
     /// dict.write(&mut file)?;
     /// # Ok(())
     /// # }
     /// ```
     ///
-    /// # Errors
+    /// # エラー
     ///
-    /// This function will return an error if:
-    /// - Writing to the underlying `writer` fails (e.g., an I/O error).
-    /// - The `rkyv` serialization process encounters an error.
+    /// この関数は以下の場合にエラーを返します:
+    /// - 基礎となる`writer`への書き込みに失敗した場合(例: I/Oエラー)。
+    /// - `rkyv`シリアライゼーションプロセスでエラーが発生した場合。
     ///
     /// # Panics
     ///
-    /// Panics if this method is called on a `Dictionary::Archived` variant.
+    /// `Dictionary::Archived`バリアントでこのメソッドが呼び出された場合にパニックします。
     pub fn write<W>(&self, wtr: W) -> Result<()>
     where
         W: Write,
@@ -422,19 +594,25 @@ impl Dictionary {
     }
 
 
-    /// Creates a dictionary from a reader by loading all data into a heap buffer.
+    /// すべてのデータをヒープバッファに読み込むことで、リーダーから辞書を作成します。
     ///
-    /// This is a fallback for when a file path is not available (e.g., reading from an
-    /// in-memory buffer). It is less memory-efficient than `from_path` as it reads
-    /// the entire content into memory.
+    /// これは、ファイルパスが利用できない場合(例: メモリ内バッファからの読み込み)の
+    /// フォールバックです。すべてのコンテンツをメモリに読み込むため、
+    /// `from_path`よりもメモリ効率が低くなります。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `rdr` - A reader that implements `std::io::Read`.
+    /// * `rdr` - `std::io::Read`を実装するリーダー。
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if the data cannot be read or if its contents are invalid.
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - データを読み込めない場合。
+    /// - コンテンツが無効な場合。
     pub fn read<R: Read>(mut rdr: R) -> Result<Self> {
         let mut magic = [0; MODEL_MAGIC_LEN];
         rdr.read_exact(&mut magic)?;
@@ -478,63 +656,69 @@ impl Dictionary {
         )
     }
 
-    /// Creates a dictionary from a file path using memory-mapping for fast loading.
+    /// メモリマッピングを使用してファイルパスから辞書を作成します。
     ///
-    /// This function maps a dictionary file into memory for zero-copy access, offering
-    /// high performance and memory efficiency. The loading behavior can be configured
-    /// with the `mode` parameter to balance safety and performance.
+    /// この関数は、辞書ファイルをメモリにマップしてゼロコピーアクセスを実現し、
+    /// 高いパフォーマンスとメモリ効率を提供します。読み込み動作は`mode`パラメータで
+    /// 設定でき、安全性とパフォーマンスのバランスを調整できます。
     ///
-    /// This function also transparently handles legacy (bincode-based) dictionaries
-    /// when the `legacy` feature is enabled, loading them into memory.
+    /// また、`legacy`フィーチャーが有効な場合、レガシー(bincodeベース)辞書を
+    /// 透過的に処理し、メモリに読み込みます。
     ///
-    /// | Mode | Validation | Writes Cache | Use Case |
+    /// | モード | 検証 | キャッシュ書き込み | 用途 |
     /// |------|-------------|---------------|-----------|
-    /// | `Validate` | Full validation every time | ❌ | Maximum safety |
-    /// | `TrustCache` | Skips if proof file exists | ✅ | Fast reloads |
+    /// | `Validate` | 毎回完全検証 | ❌ | 最大の安全性 |
+    /// | `TrustCache` | プルーフファイルが存在する場合はスキップ | ✅ | 高速な再読み込み |
     ///
     ///
-    /// ## Caching Mechanism (`LoadMode::TrustCache`)
+    /// ## キャッシングメカニズム(`LoadMode::TrustCache`)
     ///
-    /// To accelerate subsequent loads, this function uses a cache mechanism when `TrustCache`
-    /// mode is enabled. It generates a unique hash from the dictionary file's metadata
-    /// (e.g., size, modification time) and looks for a corresponding "proof file"
-    /// (e.g., `<hash>.sha256`) to prove the dictionary's validity without a full, slow check.
+    /// 後続の読み込みを高速化するため、この関数は`TrustCache`モードが有効な場合に
+    /// キャッシュメカニズムを使用します。辞書ファイルのメタデータ(サイズ、更新時刻など)から
+    /// 一意のハッシュを生成し、対応する「プルーフファイル」(例: `<hash>.sha256`)を探して、
+    /// 完全な検証を行わずに辞書の妥当性を証明します。
     ///
-    /// The search for this proof file is performed in two locations:
-    /// 1.  **Local Cache**: In the same directory as the dictionary file itself. This allows
-    ///     for portable caches that can be moved along with the dictionary.
-    /// 2.  **Global Cache**: In a system-wide, user-specific cache directory
-    ///     (e.g., `~/.cache/vibrato-rkyv` on Linux).
+    /// このプルーフファイルの検索は2つの場所で行われます:
+    /// 1.  **ローカルキャッシュ**: 辞書ファイルと同じディレクトリ内。これにより、
+    ///     辞書と一緒に移動できるポータブルなキャッシュが可能になります。
+    /// 2.  **グローバルキャッシュ**: システム全体のユーザー固有キャッシュディレクトリ
+    ///     (例: Linux上の`~/.cache/vibrato-rkyv`)。
     ///
-    /// If a valid proof file is found in either location, the dictionary is loaded instantly
-    /// without further validation.
+    /// いずれかの場所で有効なプルーフファイルが見つかった場合、辞書は追加の検証なしで
+    /// 即座に読み込まれます。
     ///
-    /// If no proof file is found, the function performs a full validation. If successful,
-    /// it **creates a new proof file in the global cache directory** to speed up the next load.
-    /// This ensures that even dictionaries in read-only locations can benefit from caching.
+    /// プルーフファイルが見つからない場合、関数は完全な検証を実行します。成功した場合、
+    /// **グローバルキャッシュディレクトリに新しいプルーフファイルを作成**して、
+    /// 次回の読み込みを高速化します。これにより、読み取り専用の場所にある辞書でも
+    /// キャッシングの恩恵を受けることができます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// - `path` - A path to the dictionary file.
-    /// - `mode` - A [`LoadMode`] that specifies the validation strategy:
-    ///   - `LoadMode::Validate`: Performs a full validation of the dictionary data on
-    ///     every load. This is the safest mode and **never writes cache files**.
-    ///     Use this for maximum safety or in environments where file writes are prohibited.
-    ///   - `LoadMode::TrustCache`: Enables the caching mechanism described above. It attempts
-    ///     a fast, unchecked load if a valid proof file is found. If not, it falls back to
-    ///     a full validation and then **creates a proof file in the global cache** on success.
-    ///     **Warning: This mode trusts file metadata for validation to achieve high performance.
-    ///     It is vulnerable to time-of-check to time-of-use (TOCTOU) attacks if the dictionary
-    ///     file can be replaced by a malicious actor. Use `LoadMode::Validate` in environments
-    ///     where file integrity cannot be guaranteed.**
+    /// - `path` - 辞書ファイルへのパス。
+    /// - `mode` - 検証戦略を指定する[`LoadMode`]:
+    ///   - `LoadMode::Validate`: 読み込むたびに辞書データの完全な検証を実行します。
+    ///     これは最も安全なモードで、**キャッシュファイルを書き込みません**。
+    ///     最大の安全性が必要な場合、またはファイル書き込みが禁止されている環境で使用します。
+    ///   - `LoadMode::TrustCache`: 上記のキャッシュメカニズムを有効にします。
+    ///     有効なプルーフファイルが見つかった場合、高速な未検証読み込みを試みます。
+    ///     見つからない場合は、完全な検証にフォールバックし、成功時に
+    ///     **グローバルキャッシュにプルーフファイルを作成**します。
+    ///     **警告: このモードは、高いパフォーマンスを実現するためにファイルメタデータを
+    ///     信頼して検証します。辞書ファイルが悪意のある攻撃者によって置き換えられる可能性が
+    ///     ある場合、TOCTOU攻撃に対して脆弱です。ファイルの整合性が保証できない環境では
+    ///     `LoadMode::Validate`を使用してください。**
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if:
-    /// - The file cannot be opened or read.
-    /// - The file is corrupted, has an invalid format, or has a mismatched magic number.
-    /// - The file was created with an incompatible version of vibrato.
-    /// - (`legacy` feature disabled) A legacy bincode-based dictionary is provided.
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - ファイルを開けない、または読み込めない場合。
+    /// - ファイルが破損している、無効な形式、またはマジックナンバーが一致しない場合。
+    /// - ファイルが互換性のないバージョンのvibratoで作成された場合。
+    /// - (`legacy`フィーチャーが無効)レガシーbincodeベースの辞書が提供された場合。
     pub fn from_path<P: AsRef<std::path::Path>>(path: P, mode: LoadMode) -> Result<Self> {
         let path = path.as_ref();
         let mut file = File::open(path).map_err(|e| {
@@ -653,36 +837,42 @@ impl Dictionary {
         }
     }
 
-    /// Creates a dictionary from a file path using memory-mapping without validation.
+    /// 検証なしでメモリマッピングを使用してファイルパスから辞書を作成します。
     ///
-    /// This function is a version of `from_path` that skips data validation for
-    /// faster loading. It memory-maps the dictionary file for zero-copy access.
-    /// It is intended for situations where the file's integrity has already been
-    /// confirmed, for instance, through a checksum.
+    /// この関数は、データ検証をスキップして高速に読み込む`from_path`のバージョンです。
+    /// 辞書ファイルをメモリマップしてゼロコピーアクセスを実現します。
+    /// チェックサムなどによってファイルの整合性が既に確認されている状況を想定しています。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `path` - A path to the compiled dictionary file.
+    /// * `path` - コンパイル済み辞書ファイルへのパス。
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if the file cannot be opened, is too small, or has an
-    /// incorrect magic number. This function does not validate the integrity of the
-    /// serialized data itself.
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - ファイルを開けない場合。
+    /// - ファイルが小さすぎる場合。
+    /// - マジックナンバーが不正な場合。
+    ///
+    /// この関数は、シリアライズされたデータ自体の整合性を検証しません。
     ///
     /// # Safety
     ///
-    /// This function is unsafe because it bypasses `rkyv`'s validation steps and
-    /// directly accesses the memory-mapped data. The caller must ensure that the
-    /// file's contents are a valid and uncorrupted representation of a dictionary.
+    /// この関数はunsafeです。なぜなら、`rkyv`の検証ステップをバイパスして
+    /// メモリマップされたデータに直接アクセスするためです。呼び出し側は、
+    /// ファイルの内容が辞書の有効で破損していない表現であることを保証する必要があります。
     ///
-    /// If the file is corrupted or truncated, this function may read invalid data
-    /// as if it were valid pointers or offsets. This can lead to out-of-bounds
-    /// memory access, panics, or other forms of undefined behavior.
+    /// ファイルが破損または切り詰められている場合、この関数は無効なデータを
+    /// 有効なポインタやオフセットであるかのように読み取る可能性があります。
+    /// これにより、境界外メモリアクセス、パニック、またはその他の形式の未定義動作が
+    /// 発生する可能性があります。
     ///
-    /// The magic number check at the start of the file helps prevent loading a
-    /// completely different file type but does not guarantee the integrity of the
-    /// subsequent data.
+    /// ファイルの先頭のマジックナンバーチェックは、完全に異なるファイルタイプの
+    /// 読み込みを防ぐのに役立ちますが、後続のデータの整合性を保証するものではありません。
     pub unsafe fn from_path_unchecked<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         let mut file = File::open(path).map_err(|e| {
@@ -744,24 +934,29 @@ impl Dictionary {
         )
     }
 
-    /// Loads a dictionary from a Zstandard-compressed file using a specified caching strategy.
+    /// 指定されたキャッシング戦略を使用してZstandard圧縮ファイルから辞書を読み込みます。
     ///
-    /// This function provides a user-friendly interface for the most common caching scenarios.
-    /// For more fine-grained control, see [`from_zstd_with_options`].
+    /// この関数は、最も一般的なキャッシングシナリオに対してユーザーフレンドリーな
+    /// インターフェースを提供します。より細かい制御が必要な場合は、
+    /// [`from_zstd_with_options`]を参照してください。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `path` - A path to the Zstandard-compressed dictionary file.
-    /// * `strategy` - The desired caching strategy, defined by the [`CacheStrategy`] enum.
+    /// * `path` - Zstandard圧縮辞書ファイルへのパス。
+    /// * `strategy` - [`CacheStrategy`]列挙型で定義される希望のキャッシング戦略。
     #[cfg_attr(feature = "legacy", doc = r"
-    When the `legacy` feature is enabled, this function returns immediately while caching
-    happens in the background, providing a responsive user experience.")]
+    `legacy`フィーチャーが有効な場合、この関数はキャッシングがバックグラウンドで
+    実行されている間に即座に戻り、応答性の高いユーザーエクスペリエンスを提供します。")]
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if the specified `cache_dir` (determined by the `strategy`)
-    /// cannot be created or written to, in addition to the errors from
-    /// [`from_zstd_with_options`].
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は、[`from_zstd_with_options`]のエラーに加えて、
+    /// (`strategy`によって決定される)`cache_dir`が作成できない、
+    /// または書き込めない場合にエラーを返します。
     pub fn from_zstd<P: AsRef<std::path::Path>>(path: P, strategy: CacheStrategy) -> Result<Self> {
         let path = path.as_ref();
 
@@ -799,46 +994,49 @@ impl Dictionary {
         )
     }
 
-    /// Loads a dictionary from a Zstandard-compressed file with configurable caching options.
+    /// 設定可能なキャッシングオプションを使用してZstandard圧縮ファイルから辞書を読み込みます。
     ///
-    /// This is an advanced version of [`from_zstd`] that allows for fine-grained control
-    /// over the caching directory. It is useful in environments with specific directory
-    /// structures or restrictive file system permissions.
+    /// これは[`from_zstd`]の高度なバージョンで、キャッシュディレクトリの細かい制御を
+    /// 可能にします。特定のディレクトリ構造や制限的なファイルシステム権限を持つ環境で
+    /// 有用です。
     ///
-    /// ## Caching Mechanism
+    /// ## キャッシングメカニズム
     ///
-    /// To avoid decompressing the file on every run, this function employs a cache mechanism.
-    /// It generates a unique hash from the metadata of the input `.zst` file (such as its
-    /// size and modification time). This hash is used as the filename for the decompressed
-    /// cache.
+    /// 実行ごとにファイルを展開するのを避けるため、この関数はキャッシュメカニズムを
+    /// 採用しています。入力`.zst`ファイルのメタデータ(サイズや更新時刻など)から
+    /// 一意のハッシュを生成します。このハッシュは、展開されたキャッシュのファイル名として
+    /// 使用されます。
     ///
-    /// On subsequent runs, if a cache file corresponding to the current metadata hash exists,
-    /// the decompression step is skipped entirely, enabling near-instantaneous loading.
-    /// If the `.zst` file is modified, its metadata hash will change, and a new cache will be
-    /// generated automatically.
+    /// 後続の実行時に、現在のメタデータハッシュに対応するキャッシュファイルが存在する場合、
+    /// 展開ステップが完全にスキップされ、ほぼ瞬時の読み込みが可能になります。
+    /// `.zst`ファイルが変更されると、そのメタデータハッシュが変更され、新しいキャッシュが
+    /// 自動的に生成されます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `path` - A path to the Zstandard-compressed dictionary file.
-    /// * `cache_dir` - The directory where the decompressed dictionary cache will be stored.
-    #[cfg_attr(feature = "legacy", doc = r" * `wait_for_cache` - (legacy feature only) If `true` and a legacy (bincode) dictionary is
-    provided, the function will block until the conversion to the new format and caching are complete.
-    If `false`, it returns immediately with a fully functional dictionary, while the caching
-    process runs in a background thread.")]
+    /// * `path` - Zstandard圧縮辞書ファイルへのパス。
+    /// * `cache_dir` - 展開された辞書キャッシュが保存されるディレクトリ。
+    #[cfg_attr(feature = "legacy", doc = r" * `wait_for_cache` - (legacyフィーチャーのみ) `true`でレガシー(bincode)辞書が
+    提供された場合、関数は新しい形式への変換とキャッシングが完了するまでブロックします。
+    `false`の場合、完全に機能する辞書ですぐに戻り、キャッシングプロセスは
+    バックグラウンドスレッドで実行されます。")]
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// This function will return an error if:
-    /// - The file specified by `path` cannot be opened or read (e.g., I/O errors).
-    /// - The file is not a valid Zstandard-compressed archive.
-    /// - The decompressed data is not a valid dictionary file (e.g., corrupted data or
-    ///   incorrect magic number).
-    /// - The cache directory specified by `cache_dir` cannot be created or written to.
-    #[cfg_attr(feature = "legacy", doc = r" - (legacy feature only) The background caching thread panics when `wait_for_cache` is `true`.")]
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - `path`で指定されたファイルを開けない、または読み込めない場合(例: I/Oエラー)。
+    /// - ファイルが有効なZstandard圧縮アーカイブでない場合。
+    /// - 展開されたデータが有効な辞書ファイルでない場合(例: 破損データまたは不正なマジックナンバー)。
+    /// - `cache_dir`で指定されたキャッシュディレクトリが作成できない、または書き込めない場合。
+    #[cfg_attr(feature = "legacy", doc = r" - (legacyフィーチャーのみ) `wait_for_cache`が`true`のときにバックグラウンドキャッシングスレッドがパニックした場合。")]
     ///
     /// # Examples
     ///
-    /// ### Specifying a custom cache directory
+    /// ### カスタムキャッシュディレクトリの指定
     ///
     /// ```no_run
     /// # use vibrato_rkyv::{Dictionary, errors::Result};
@@ -846,7 +1044,7 @@ impl Dictionary {
     /// let dict = Dictionary::from_zstd_with_options(
     ///     "path/to/system.dic.zst",
     ///     "/tmp/my_app_cache",
-    #[cfg_attr(feature = "legacy", doc = r"true, // Wait for background cache generation to complete")]
+    #[cfg_attr(feature = "legacy", doc = r"true, // バックグラウンドキャッシュ生成の完了を待つ")]
     /// )?;
     /// # Ok(())
     /// # }
@@ -995,19 +1193,32 @@ impl Dictionary {
         Self::from_path(decompressed_dict_path, LoadMode::TrustCache)
     }
 
-    /// Creates a [`Dictionary`] instance from a reader for a legacy
-    /// `bincode`-based dictionary.
+    /// レガシー`bincode`ベースの辞書のリーダーから[`Dictionary`]インスタンスを作成します。
     ///
-    /// This function is intended for internal tools such as the `compiler` to
-    /// convert old dictionary formats. It loads the entire dictionary into memory.
+    /// この関数は、古い辞書形式を変換するための`compiler`などの内部ツールを
+    /// 対象としています。辞書全体をメモリに読み込みます。
     ///
-    /// This function is only available when the `legacy` feature is enabled.
+    /// この関数は、`legacy`フィーチャーが有効な場合にのみ使用できます。
+    ///
+    /// # 引数
+    ///
+    /// * `reader` - レガシー辞書データを読み込むリーダー。
+    ///
+    /// # 戻り値
+    ///
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - リーダーからのデータ読み込みに失敗した場合。
+    /// - レガシー辞書のデシリアライゼーションに失敗した場合。
     ///
     /// # Safety
     ///
-    /// This function is `unsafe` because it uses [`std::mem::transmute`] to cast
-    /// the dictionary structure deserialized with `bincode`.
-    /// It is currently safe as this fork maintains an identical memory layout.
+    /// この関数は`unsafe`です。なぜなら、[`std::mem::transmute`]を使用して
+    /// `bincode`でデシリアライズされた辞書構造をキャストするためです。
+    /// このフォークは同一のメモリレイアウトを維持しているため、現在は安全です。
     #[cfg(feature = "legacy")]
     pub unsafe fn from_legacy_reader<R: std::io::Read>(reader: R) -> Result<Self> {
         let legacy_dict_inner = crate::legacy::Dictionary::read(reader)?.data;
@@ -1022,30 +1233,36 @@ impl Dictionary {
         Ok(Self::Owned { dict: Arc::new(rkyv_dict_inner), _caching_handle: None })
     }
 
-    /// Creates a `Dictionary` instance from a preset, downloading it if not present.
+    /// プリセット辞書から`Dictionary`インスタンスを作成し、存在しない場合はダウンロードします。
     ///
-    /// This is the most convenient way to get started with a pre-compiled dictionary.
-    /// The function first checks if the specified preset dictionary already exists in the
-    /// given directory. If it exists and its integrity is verified, it is loaded directly.
-    /// Otherwise, the dictionary is downloaded from the official repository to the directory,
-    /// and then loaded.
+    /// これは、プリコンパイル済み辞書を使い始めるための最も便利な方法です。
+    /// この関数は、まず指定されたプリセット辞書が指定のディレクトリに既に存在するかを
+    /// 確認します。存在し、整合性が検証された場合は直接読み込みます。
+    /// それ以外の場合は、公式リポジトリから辞書をディレクトリにダウンロードし、
+    /// その後読み込みます。
     ///
-    /// The downloaded dictionary is compressed with Zstandard. This function transparently
-    /// handles decompression and caching for fast subsequent loads via memory-mapping.
+    /// ダウンロードされた辞書はZstandard圧縮されています。この関数は、
+    /// メモリマッピングによる高速な後続読み込みのために、展開とキャッシングを
+    /// 透過的に処理します。
     ///
-    /// This function is only available when the `download` feature is enabled.
+    /// この関数は、`download`フィーチャーが有効な場合にのみ使用できます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `kind` - The preset dictionary to use (e.g., `PresetDictionaryKind::Ipadic`).
-    /// * `dir` - The directory where the dictionary will be stored and cached.
-    ///   It is recommended to use a persistent location.
+    /// * `kind` - 使用するプリセット辞書(例: `PresetDictionaryKind::Ipadic`)。
+    /// * `dir` - 辞書が保存およびキャッシュされるディレクトリ。
+    ///   永続的な場所を使用することを推奨します。
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if the download fails (e.g., network issues), if the downloaded
-    /// file is corrupted (hash mismatch), or if there are file system permission
-    /// errors when creating the cache directory.
+    /// 新しい`Dictionary`インスタンス。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - ダウンロードが失敗した場合(例: ネットワークの問題)。
+    /// - ダウンロードされたファイルが破損している場合(ハッシュの不一致)。
+    /// - キャッシュディレクトリの作成時にファイルシステム権限エラーがある場合。
     ///
     /// # Examples
     ///
@@ -1053,8 +1270,8 @@ impl Dictionary {
     /// # use std::path::Path;
     /// # use vibrato_rkyv::{Dictionary, Tokenizer, dictionary::PresetDictionaryKind};
     /// # let dir = Path::new("./cache_dir");
-    /// // Download and load the IPADIC preset dictionary.
-    /// // The first call will download the file, subsequent calls will use the cache.
+    /// // IPADICプリセット辞書をダウンロードして読み込みます。
+    /// // 最初の呼び出しではファイルをダウンロードし、後続の呼び出しではキャッシュを使用します。
     /// let dictionary = Dictionary::from_preset_with_download(
     ///     PresetDictionaryKind::Ipadic,
     ///     dir,
@@ -1074,26 +1291,27 @@ impl Dictionary {
         )
     }
 
-    /// Downloads a preset dictionary file and returns the path to it.
+    /// プリセット辞書ファイルをダウンロードし、そのパスを返します。
     ///
-    /// Once downloaded, the dictionary can be loaded using [`Dictionary::from_zstd`].
+    /// ダウンロード後、辞書は[`Dictionary::from_zstd`]を使用して読み込むことができます。
     ///
-    /// This function is only available when the `download` feature is enabled.
+    /// この関数は、`download`フィーチャーが有効な場合にのみ使用できます。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `kind` - The preset dictionary to download (e.g., `PresetDictionaryKind::Ipadic`).
-    /// * `dir` - The directory where the dictionary file will be stored.
+    /// * `kind` - ダウンロードするプリセット辞書(例: `PresetDictionaryKind::Ipadic`)。
+    /// * `dir` - 辞書ファイルが保存されるディレクトリ。
     ///
-    /// # Returns
+    /// # 戻り値
     ///
-    /// A `Result` containing the `PathBuf` to the downloaded
-    /// Zstandard-compressed dictionary file.
+    /// ダウンロードされたZstandard圧縮辞書ファイルへの`PathBuf`を含む`Result`。
     ///
-    /// # Errors
+    /// # エラー
     ///
-    /// Returns an error if the download fails, the file is corrupted, or if there are
-    /// file system permission errors.
+    /// この関数は以下の場合にエラーを返します:
+    /// - ダウンロードが失敗した場合。
+    /// - ファイルが破損している場合。
+    /// - ファイルシステム権限エラーがある場合。
     ///
     /// # Examples
     ///
@@ -1106,7 +1324,7 @@ impl Dictionary {
     ///     dir,
     /// ).unwrap();
     ///
-    /// println!("Dictionary downloaded to: {:?}", dict_path);
+    /// println!("辞書のダウンロード先: {:?}", dict_path);
     ///
     /// let dictionary = Dictionary::from_zstd(dict_path, CacheStrategy::Local).unwrap();
     /// ```
@@ -1115,24 +1333,30 @@ impl Dictionary {
         Ok(fetch::download_dictionary(kind, dir)?)
     }
 
-    /// Decompresses a Zstandard-compressed dictionary to a specified path.
+    /// Zstandard圧縮辞書を指定されたパスに展開します。
     ///
-    /// This function reads a `.zst` compressed dictionary, validates its contents,
-    /// and writes the decompressed dictionary to the `output_path`.
+    /// この関数は、`.zst`圧縮辞書を読み込み、その内容を検証し、
+    /// 展開された辞書を`output_path`に書き込みます。
     ///
-    /// This is a lower-level utility useful for application setup, testing,
-    /// or custom cache management.
+    /// これは、アプリケーションのセットアップ、テスト、または
+    /// カスタムキャッシュ管理に有用な低レベルユーティリティです。
     ///
-    /// # Arguments
+    /// # 引数
     ///
-    /// * `input_path` - Path to the Zstandard-compressed dictionary file.
-    /// * `output_path` - Path where the decompressed dictionary will be saved.
+    /// * `input_path` - Zstandard圧縮辞書ファイルへのパス。
+    /// * `output_path` - 展開された辞書が保存されるパス。
     ///
-    /// # Errors
+    /// # 戻り値
     ///
-    /// Returns an error if the input file cannot be read, is not a valid Zstandard
-    /// archive, the decompressed data is not a valid dictionary, or the output
-    /// path cannot be written to.
+    /// 成功時は`Ok(())`。
+    ///
+    /// # エラー
+    ///
+    /// この関数は以下の場合にエラーを返します:
+    /// - 入力ファイルを読み込めない場合。
+    /// - 有効なZstandard圧縮アーカイブでない場合。
+    /// - 展開されたデータが有効な辞書でない場合。
+    /// - 出力パスに書き込めない場合。
     pub fn decompress_zstd<P, Q>(input_path: P, output_path: Q) -> Result<()>
     where
         P: AsRef<std::path::Path>,
@@ -1196,6 +1420,25 @@ impl Dictionary {
     }
 }
 
+/// ファイルメタデータからハッシュを計算します。
+///
+/// この関数は、ファイルのメタデータ(サイズ、更新時刻、iノードなど)から
+/// 一意のSHA256ハッシュを生成します。このハッシュは、キャッシュファイルの
+/// 命名とファイルの同一性確認に使用されます。
+///
+/// # 引数
+///
+/// * `meta` - ハッシュを計算するファイルのメタデータ。
+///
+/// # 戻り値
+///
+/// メタデータのSHA256ハッシュの16進数表現文字列。
+///
+/// # プラットフォーム固有の動作
+///
+/// - Unix: デバイスID、iノード、サイズ、変更時刻を使用
+/// - Windows: ファイルサイズ、最終書き込み時刻、作成時刻、ファイル属性を使用
+/// - その他: ファイルタイプ、読み取り専用フラグ、サイズ、変更時刻、作成時刻を使用
 #[inline(always)]
 pub(crate) fn compute_metadata_hash(meta: &Metadata) -> String {
     let mut hasher = Sha256::new();
@@ -1261,6 +1504,11 @@ pub(crate) fn compute_metadata_hash(meta: &Metadata) -> String {
 }
 
 impl<'a> DictionaryInnerRef<'a> {
+    /// コネクタへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブ版または所有版のコネクタへの参照。
     #[inline(always)]
     pub fn connector(&self) -> ConnectorKindRef<'a> {
         match self {
@@ -1269,6 +1517,15 @@ impl<'a> DictionaryInnerRef<'a> {
         }
     }
 
+    /// 指定された単語のパラメータを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語のインデックス。辞書の種類と位置を含みます。
+    ///
+    /// # 戻り値
+    ///
+    /// 単語のパラメータ(`WordParam`)。左接続ID、右接続ID、単語コストを含みます。
     #[inline(always)]
     pub(crate) fn word_param(&self, word_idx: WordIdx) -> WordParam {
         match self {
@@ -1283,27 +1540,60 @@ impl<'a> DictionaryInnerRef<'a> {
 }
 
 impl ArchivedDictionaryInner {
+    /// コネクタへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされた`ConnectorWrapper`への参照。
     #[inline(always)]
     pub(crate) fn connector(&self) -> &ArchivedConnectorWrapper {
         &self.connector
     }
+    /// システム辞書への参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされたシステム辞書(`ArchivedLexicon`)への参照。
     #[inline(always)]
     pub(crate) fn system_lexicon(&self) -> &ArchivedLexicon {
         &self.system_lexicon
     }
+    /// ユーザー辞書への参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされたユーザー辞書への参照。
     #[inline(always)]
     pub(crate) fn user_lexicon(&self) -> &Archived<Option<Lexicon>> {
         &self.user_lexicon
     }
+    /// 文字プロパティへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされた文字プロパティ(`ArchivedCharProperty`)への参照。
     #[inline(always)]
     pub(crate) fn char_prop(&self) -> &ArchivedCharProperty {
         &self.char_prop
     }
+    /// 未知語ハンドラへの参照を取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// アーカイブされた未知語ハンドラ(`ArchivedUnkHandler`)への参照。
     #[inline(always)]
     pub(crate) fn unk_handler(&self) -> &ArchivedUnkHandler {
         &self.unk_handler
     }
-    /// Gets the word parameter.
+    /// 指定された単語のパラメータを取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語のインデックス。辞書の種類と位置を含みます。
+    ///
+    /// # 戻り値
+    ///
+    /// 単語のパラメータ(`WordParam`)。左接続ID、右接続ID、単語コストを含みます。
     #[inline(always)]
     pub(crate) fn word_param(&self, word_idx: WordIdx) -> WordParam {
         match word_idx.lex_type {
@@ -1313,7 +1603,15 @@ impl ArchivedDictionaryInner {
         }
     }
 
-    /// Gets the reference to the feature string.
+    /// 指定された単語の素性文字列への参照を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `word_idx` - 単語のインデックス。辞書の種類と位置を含みます。
+    ///
+    /// # 戻り値
+    ///
+    /// 素性文字列への参照。
     #[inline(always)]
     pub fn word_feature(&self, word_idx: WordIdx) -> &str {
         match word_idx.lex_type {

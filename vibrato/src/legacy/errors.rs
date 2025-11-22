@@ -1,47 +1,88 @@
-//! Definition of errors.
+//! エラー定義
+//!
+//! このモジュールは、Vibratoレガシー形式で発生する可能性のあるエラー型を定義します。
 
 use std::error::Error;
 use std::fmt;
 
-/// A specialized Result type for Vibrato.
+/// Vibrato用の特化型Result型
+///
+/// この型は、VibratoErrorをデフォルトのエラー型として使用する
+/// 標準ライブラリのResult型のエイリアスです。
 pub type Result<T, E = VibratoError> = std::result::Result<T, E>;
 
-/// The error type for Vibrato.
+/// Vibratoのエラー型
+///
+/// この列挙型は、Vibratoレガシー形式の処理中に発生する可能性のある
+/// すべてのエラーを表します。各バリアントは、異なる種類のエラーに対応しています。
 #[derive(Debug)]
 pub enum VibratoError {
-    /// The error variant for [`InvalidArgumentError`].
+    /// 無効な引数エラーのバリアント
+    ///
+    /// 関数やメソッドに渡された引数が無効な場合に使用されます。
+    /// 詳細は[`InvalidArgumentError`]を参照してください。
     InvalidArgument(InvalidArgumentError),
 
-    /// The error variant for [`InvalidFormatError`].
+    /// 無効な形式エラーのバリアント
+    ///
+    /// 入力データの形式が期待と異なる場合に使用されます。
+    /// 詳細は[`InvalidFormatError`]を参照してください。
     InvalidFormat(InvalidFormatError),
 
-    /// The error variant for [`TryFromIntError`](std::num::TryFromIntError).
+    /// 整数変換エラーのバリアント
+    ///
+    /// [`TryFromIntError`](std::num::TryFromIntError)のラッパーです。
     TryFromInt(std::num::TryFromIntError),
 
-    /// The error variant for [`ParseFloatError`](std::num::ParseFloatError).
+    /// 浮動小数点数解析エラーのバリアント
+    ///
+    /// [`ParseFloatError`](std::num::ParseFloatError)のラッパーです。
     ParseFloat(std::num::ParseFloatError),
 
-    /// The error variant for [`ParseIntError`](std::num::ParseIntError).
+    /// 整数解析エラーのバリアント
+    ///
+    /// [`ParseIntError`](std::num::ParseIntError)のラッパーです。
     ParseInt(std::num::ParseIntError),
 
-    /// The error variant for [`DecodeError`](bincode::error::DecodeError).
+    /// bincodeデコードエラーのバリアント
+    ///
+    /// [`DecodeError`](bincode::error::DecodeError)のラッパーです。
     BincodeDecode(bincode::error::DecodeError),
 
-    /// The error variant for [`EncodeError`](bincode::error::EncodeError).
+    /// bincodeエンコードエラーのバリアント
+    ///
+    /// [`EncodeError`](bincode::error::EncodeError)のラッパーです。
     BincodeEncode(bincode::error::EncodeError),
 
-    /// The error variant for [`std::io::Error`].
+    /// 標準I/Oエラーのバリアント
+    ///
+    /// [`std::io::Error`]のラッパーです。
     StdIo(std::io::Error),
 
-    /// The error variant for [`std::str::Utf8Error`].
+    /// UTF-8エラーのバリアント
+    ///
+    /// [`std::str::Utf8Error`]のラッパーです。
     Utf8(std::str::Utf8Error),
 
-    /// The error variant for [`RucrfError`](rucrf::errors::RucrfError).
+    /// CRFエラーのバリアント
+    ///
+    /// [`RucrfError`](rucrf::errors::RucrfError)のラッパーです。
+    /// このバリアントは`train`フィーチャーが有効な場合にのみ利用可能です。
     #[cfg(feature = "train")]
     Crf(rucrf::errors::RucrfError),
 }
 
 impl VibratoError {
+    /// 無効な引数エラーを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `arg` - 無効な引数の名前
+    /// * `msg` - エラーメッセージ
+    ///
+    /// # 戻り値
+    ///
+    /// 作成された`VibratoError::InvalidArgument`バリアント
     pub(crate) fn invalid_argument<S>(arg: &'static str, msg: S) -> Self
     where
         S: Into<String>,
@@ -74,13 +115,15 @@ impl fmt::Display for VibratoError {
 
 impl Error for VibratoError {}
 
-/// Error used when the argument is invalid.
+/// 引数が無効な場合に使用されるエラー
+///
+/// このエラーは、関数やメソッドに渡された引数が無効な値や形式を持つ場合に発生します。
 #[derive(Debug)]
 pub struct InvalidArgumentError {
-    /// Name of the argument.
+    /// 引数の名前
     pub(crate) arg: &'static str,
 
-    /// Error message.
+    /// エラーメッセージ
     pub(crate) msg: String,
 }
 
@@ -92,13 +135,15 @@ impl fmt::Display for InvalidArgumentError {
 
 impl Error for InvalidArgumentError {}
 
-/// Error used when the input format is invalid.
+/// 入力形式が無効な場合に使用されるエラー
+///
+/// このエラーは、入力データの形式が期待される形式と異なる場合に発生します。
 #[derive(Debug)]
 pub struct InvalidFormatError {
-    /// Name of the format.
+    /// 形式の名前
     pub(crate) arg: &'static str,
 
-    /// Error message.
+    /// エラーメッセージ
     pub(crate) msg: String,
 }
 

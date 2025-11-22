@@ -1,3 +1,8 @@
+//! 接続コスト計算のためのコネクター
+//!
+//! このモジュールは、形態素間の接続コストを計算するための
+//! 様々なコネクター実装を提供します。
+
 mod dual_connector;
 mod matrix_connector;
 mod raw_connector;
@@ -9,26 +14,42 @@ pub use crate::dictionary::connector::matrix_connector::MatrixConnector;
 pub use crate::dictionary::connector::raw_connector::RawConnector;
 use crate::dictionary::mapper::ConnIdMapper;
 
+/// コネクターのビュー機能を提供するトレイト
 pub trait ConnectorView {
-    /// Returns maximum number of left connection ID
+    /// 左接続IDの最大数を返します。
     fn num_left(&self) -> usize;
 
-    /// Returns maximum number of right connection ID
+    /// 右接続IDの最大数を返します。
     fn num_right(&self) -> usize;
 }
 
+/// 接続ID のマッピング機能を提供するトレイト
 pub trait Connector: ConnectorView {
-    /// Do NOT make this function public to maintain consistency in
-    /// the connection-id mapping among members of `Dictionary`.
-    /// The consistency is managed in `Dictionary`.
+    /// 接続IDをマッピングします。
+    ///
+    /// # 注意
+    ///
+    /// `Dictionary` のメンバー間で接続IDマッピングの一貫性を保つため、
+    /// この関数は公開しないでください。一貫性は `Dictionary` で管理されます。
     fn map_connection_ids(&mut self, mapper: &ConnIdMapper);
 }
 
+/// 接続コスト計算機能を提供するトレイト
 pub trait ConnectorCost: ConnectorView {
-    /// Gets the value of the connection matrix
+    /// 接続行列の値を取得します。
+    ///
+    /// # 引数
+    ///
+    /// * `right_id` - 右接続ID
+    /// * `left_id` - 左接続ID
+    ///
+    /// # 戻り値
+    ///
+    /// 接続コスト
     fn cost(&self, right_id: u16, left_id: u16) -> i32;
 }
 
+/// コネクターのラッパー列挙型
 #[derive(Archive, Serialize, Deserialize)]
 pub enum ConnectorWrapper {
     Matrix(MatrixConnector),

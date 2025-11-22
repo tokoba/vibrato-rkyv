@@ -1,3 +1,8 @@
+//! Vibrato辞書(bincode形式)の読み込みベンチマーク
+//!
+//! bincode形式のVibrato辞書ファイルの読み込み速度を計測します。
+//! ウォームキャッシュとコールドキャッシュの両方の状況で測定します。
+
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use tar::Archive;
 use xz2::bufread::XzDecoder;

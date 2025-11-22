@@ -1,3 +1,8 @@
+//! ラティス（格子）構造の実装モジュール。
+//!
+//! このモジュールは、形態素解析におけるViterbiアルゴリズムのための
+//! ラティス構造を提供します。ラティスはノードとパスから構成され、
+//! 最適なトークン分割を見つけるために使用されます。
 use crate::dictionary::connector::ConnectorCost;
 use crate::dictionary::lexicon::WordParam;
 use crate::dictionary::mapper::ConnIdCounter;
@@ -9,29 +14,42 @@ use crate::common::{BOS_EOS_CONNECTION_ID, MAX_SENTENCE_LENGTH};
 const MAX_COST: i32 = i32::MAX;
 const INVALID_IDX: u16 = u16::MAX;
 
-/// A node in the lattice.
+/// ラティス内のノード。
+///
+/// 各ノードは単語の候補を表し、位置情報、接続ID、最小コストなどを保持します。
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Node {
+    /// 単語ID。
     pub word_id: u32,
+    /// 辞書タイプ（システム辞書、ユーザー辞書など）。
     pub lex_type: LexType,
+    /// ノードの開始位置（文字単位）。
     pub start_node: usize,
+    /// 単語の開始位置（文字単位）。
     pub start_word: usize,
+    /// 左側の接続ID。
     pub left_id: u16,
+    /// 右側の接続ID。
     pub right_id: u16,
+    /// 最小コストを持つ左側ノードのインデックス。
     pub min_idx: u16,
+    /// BOSからこのノードまでの最小コスト。
     pub min_cost: i32,
-    /// A raw pointer to the head of the linked list of paths connecting from the left.
-    pub lpath: *const Path, // null if no path
+    /// 左側から接続するパスの連結リストの先頭へのポインタ。
+    /// パスがない場合はnull。
+    pub lpath: *const Path,
 }
 
-/// Represents a connection between two nodes in the lattice.
+/// ラティス内の2つのノード間の接続を表します。
+///
+/// パスは連結リストとして保存され、N-best探索に使用されます。
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Path {
-    /// A raw pointer to the left node (closer to BOS).
+    /// 左側のノードへのポインタ（BOSに近い方）。
     pub lnode: *const Node,
-    /// The next path originating from the right node (linked list).
+    /// 右側のノードから発生する次のパス（連結リスト）。
     pub lnext: *const Path,
 }
 
@@ -52,18 +70,45 @@ impl Default for Node {
 }
 
 impl Node {
-    #[inline(always)] pub fn word_idx(&self) -> WordIdx { WordIdx::new(self.lex_type, self.word_id) }
-    #[inline(always)] pub fn is_connected_to_bos(&self) -> bool { self.min_cost != MAX_COST }
-    #[inline(always)] pub fn is_bos(&self) -> bool { self.start_node == MAX_SENTENCE_LENGTH }
-    #[inline(always)] pub fn is_eos(&self) -> bool { self.right_id == u16::MAX }
+    /// 単語インデックスを取得します。
+    #[inline(always)]
+    pub fn word_idx(&self) -> WordIdx {
+        WordIdx::new(self.lex_type, self.word_id)
+    }
+
+    /// このノードがBOSに接続されているかどうかを判定します。
+    #[inline(always)]
+    pub fn is_connected_to_bos(&self) -> bool {
+        self.min_cost != MAX_COST
+    }
+
+    /// このノードがBOS（文頭）ノードかどうかを判定します。
+    #[inline(always)]
+    pub fn is_bos(&self) -> bool {
+        self.start_node == MAX_SENTENCE_LENGTH
+    }
+
+    /// このノードがEOS（文末）ノードかどうかを判定します。
+    #[inline(always)]
+    pub fn is_eos(&self) -> bool {
+        self.right_id == u16::MAX
+    }
 }
 
+/// ラティスの種類を表す列挙型。
+///
+/// 1-best解用とN-best解用の2種類のラティスを区別します。
 pub enum LatticeKind {
+    /// 1-best解（最良の解のみ）用のラティス。
     For1Best(Lattice),
+    /// N-best解（複数の候補解）用のラティス。
     ForNBest(LatticeNBest),
 }
 
-/// This implementation inspired by sudachi.rs.
+/// 1-best解用のラティス構造体。
+///
+/// Viterbiアルゴリズムを使用して最良のトークン分割を見つけるための
+/// データ構造です。この実装はsudachi.rsにインスパイアされています。
 #[derive(Default)]
 pub struct Lattice {
     ends: Vec<Vec<Node>>,
@@ -72,6 +117,15 @@ pub struct Lattice {
 }
 
 impl LatticeKind {
+    /// 1-best解用にラティスを準備します。
+    ///
+    /// # 引数
+    ///
+    /// * `len_char` - 文の文字数
+    ///
+    /// # 戻り値
+    ///
+    /// 1-best用ラティスへの可変参照
     #[inline]
     pub fn prepare_for_1best(&mut self, len_char: usize) -> &mut Lattice {
         match self {
@@ -86,6 +140,15 @@ impl LatticeKind {
         }
     }
 
+    /// N-best解用にラティスを準備します。
+    ///
+    /// # 引数
+    ///
+    /// * `len_char` - 文の文字数
+    ///
+    /// # 戻り値
+    ///
+    /// N-best用ラティスへの可変参照
     #[inline]
     pub fn prepare_for_nbest(&mut self, len_char: usize) -> &mut LatticeNBest {
         match self {
@@ -102,6 +165,11 @@ impl LatticeKind {
 }
 
 impl Lattice {
+    /// ラティスをリセットし、新しい文の処理を準備します。
+    ///
+    /// # 引数
+    ///
+    /// * `len_char` - 新しい文の文字数
     pub fn reset(&mut self, len_char: usize) {
         Self::reset_vec(&mut self.ends, len_char + 1);
         self.len_char = len_char;
@@ -122,12 +190,17 @@ impl Lattice {
         }
     }
 
-    /// Returns the number of characters of the set sentence.
+    /// 設定された文の文字数を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// 文字数
     #[inline(always)]
     pub const fn len_char(&self) -> usize {
         self.len_char
     }
 
+    /// BOS（文頭）ノードを挿入します。
     fn insert_bos(&mut self) {
         self.ends[0].push(Node {
             word_id: u32::MAX,
@@ -142,6 +215,12 @@ impl Lattice {
         });
     }
 
+    /// EOS（文末）ノードを挿入します。
+    ///
+    /// # 引数
+    ///
+    /// * `start_node` - EOSノードの開始位置
+    /// * `connector` - 接続コスト計算用のコネクタ
     pub fn insert_eos<C>(&mut self, start_node: usize, connector: &C)
     where
         C: ConnectorCost,
@@ -161,6 +240,16 @@ impl Lattice {
         });
     }
 
+    /// ラティスに新しいノードを挿入します。
+    ///
+    /// # 引数
+    ///
+    /// * `start_node` - ノードの開始位置
+    /// * `start_word` - 単語の開始位置
+    /// * `end_word` - 単語の終了位置
+    /// * `word_idx` - 単語インデックス
+    /// * `word_param` - 単語パラメータ（接続ID、コストなど）
+    /// * `connector` - 接続コスト計算用のコネクタ
     pub fn insert_node<C>(
         &mut self,
         start_node: usize,
@@ -212,12 +301,27 @@ impl Lattice {
         (min_idx, min_cost)
     }
 
-    /// Checks if there exist at least one at the word end boundary
+    /// 指定位置に少なくとも1つのノードが存在するかチェックします。
+    ///
+    /// # 引数
+    ///
+    /// * `i` - チェックする位置
+    ///
+    /// # 戻り値
+    ///
+    /// ノードが存在する場合は`true`、存在しない場合は`false`
     #[inline(always)]
     pub fn has_previous_node(&self, i: usize) -> bool {
         self.ends.get(i).map(|d| !d.is_empty()).unwrap_or(false)
     }
 
+    /// 最良パスのノードをベクトルに追加します。
+    ///
+    /// EOSから後方にたどり、最良パスを構成するすべてのノードを追加します。
+    ///
+    /// # 引数
+    ///
+    /// * `top_nodes` - ノードを追加するベクトル
     pub fn append_top_nodes(&self, top_nodes: &mut Vec<(usize, Node)>) {
         let eos = self.eos.as_ref().unwrap();
         let mut end_node = eos.start_node;
@@ -229,6 +333,11 @@ impl Lattice {
         }
     }
 
+    /// 接続IDの出現回数をカウンタに追加します。
+    ///
+    /// # 引数
+    ///
+    /// * `counter` - 接続IDカウンタ
     pub fn add_connid_counts(&self, counter: &mut ConnIdCounter) {
         for end_char in 1..=self.len_char() {
             for r_node in &self.ends[end_char] {
@@ -245,7 +354,10 @@ impl Lattice {
     }
 }
 
-/// This implementation inspired by sudachi.rs.
+/// N-best解用のラティス構造体。
+///
+/// 複数の候補パスを保持するために、各ノード間のすべての接続を保存します。
+/// この実装はsudachi.rsにインスパイアされています。
 #[derive(Default)]
 pub struct LatticeNBest {
     arena: bumpalo::Bump,
@@ -255,6 +367,13 @@ pub struct LatticeNBest {
 }
 
 impl LatticeNBest {
+    /// ラティスをリセットし、新しい文の処理を準備します。
+    ///
+    /// アリーナアロケータもリセットされます。
+    ///
+    /// # 引数
+    ///
+    /// * `len_char` - 新しい文の文字数
     pub fn reset(&mut self, len_char: usize) {
         self.arena.reset();
 
@@ -277,18 +396,27 @@ impl LatticeNBest {
         self.insert_bos();
     }
 
-    /// Gets the EOS node.
+    /// EOSノードを取得します。
+    ///
+    /// # 戻り値
+    ///
+    /// EOSノードが存在する場合は`Some(&Node)`、存在しない場合は`None`
     #[inline(always)]
     pub fn eos_node(&self) -> Option<&Node> {
         unsafe { self.eos.as_ref() }
     }
 
-    /// Returns the number of characters of the set sentence.
+    /// 設定された文の文字数を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// 文字数
     #[inline(always)]
     pub const fn len_char(&self) -> usize {
         self.len_char
     }
 
+    /// BOS（文頭）ノードを挿入します。
     fn insert_bos(&mut self) {
         let bos_node = self.arena.alloc(Node {
             word_id: u32::MAX,
@@ -304,6 +432,12 @@ impl LatticeNBest {
         self.ends[0].push(bos_node);
     }
 
+    /// EOS（文末）ノードを挿入し、すべての可能な接続を保存します。
+    ///
+    /// # 引数
+    ///
+    /// * `start_node` - EOSノードの開始位置
+    /// * `connector` - 接続コスト計算用のコネクタ
     pub fn insert_eos<C: ConnectorCost>(&mut self, start_node: usize, connector: &C) {
         let eos_node = self.arena.alloc(Node {
             word_id: u32::MAX,
@@ -334,6 +468,16 @@ impl LatticeNBest {
         self.eos = eos_node;
     }
 
+    /// ラティスに新しいノードを挿入し、すべての可能な接続パスを保存します。
+    ///
+    /// # 引数
+    ///
+    /// * `start_node_pos` - ノードの開始位置
+    /// * `start_word` - 単語の開始位置
+    /// * `end_word` - 単語の終了位置
+    /// * `word_idx` - 単語インデックス
+    /// * `word_param` - 単語パラメータ（接続ID、コストなど）
+    /// * `connector` - 接続コスト計算用のコネクタ
     pub fn insert_node<C>(
         &mut self,
         start_node_pos: usize,
@@ -393,12 +537,25 @@ impl LatticeNBest {
         }
     }
 
-    /// Checks if there exist at least one at the word end boundary
+    /// 指定位置に少なくとも1つのノードが存在するかチェックします。
+    ///
+    /// # 引数
+    ///
+    /// * `i` - チェックする位置
+    ///
+    /// # 戻り値
+    ///
+    /// ノードが存在する場合は`true`、存在しない場合は`false`
     #[inline(always)]
     pub fn has_previous_node(&self, i: usize) -> bool {
         self.ends.get(i).map(|d| !d.is_empty()).unwrap_or(false)
     }
 
+    /// 接続IDの出現回数をカウンタに追加します。
+    ///
+    /// # 引数
+    ///
+    /// * `counter` - 接続IDカウンタ
     pub fn add_connid_counts(&self, counter: &mut ConnIdCounter) {
         for end_char in 1..=self.len_char() {
             for &r_node_ptr in &self.ends[end_char] {

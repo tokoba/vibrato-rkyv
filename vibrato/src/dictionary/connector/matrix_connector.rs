@@ -1,3 +1,7 @@
+//! 接続コスト行列の実装
+//!
+//! このモジュールは、接続コストを行列形式で保持するコネクターを提供します。
+
 use std::io::{prelude::*, BufReader, Read};
 
 use rkyv::{Archive, Deserialize, Serialize};
@@ -6,7 +10,7 @@ use crate::dictionary::connector::{Connector, ConnectorCost, ConnectorView};
 use crate::dictionary::mapper::ConnIdMapper;
 use crate::errors::{Result, VibratoError};
 
-/// Matrix of connection costs.
+/// 接続コストの行列
 #[derive(Archive, Serialize, Deserialize)]
 pub struct MatrixConnector {
     data: Vec<i16>,
@@ -15,6 +19,13 @@ pub struct MatrixConnector {
 }
 
 impl MatrixConnector {
+    /// 新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `data` - 接続コストデータ
+    /// * `num_right` - 右接続IDの数
+    /// * `num_left` - 左接続IDの数
     pub const fn new(data: Vec<i16>, num_right: usize, num_left: usize) -> Self {
         Self {
             data,
@@ -23,7 +34,19 @@ impl MatrixConnector {
         }
     }
 
-    /// Creates a new instance from `matrix.def`.
+    /// `matrix.def` ファイルから新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `rdr` - `matrix.def` ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(MatrixConnector)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_reader<R>(rdr: R) -> Result<Self>
     where
         R: Read,

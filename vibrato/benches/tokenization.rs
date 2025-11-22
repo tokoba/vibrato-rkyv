@@ -1,3 +1,8 @@
+//! プリセット辞書を用いた形態素解析のベンチマーク
+//!
+//! 複数のプリセット辞書(IPAdic、UniDic-CWJ、BCCWJ-UniDic等)を使用して、
+//! デフォルト設定とMeCab互換設定での形態素解析速度を計測します。
+
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;

@@ -1,9 +1,15 @@
-//! # Vibrato
+//! レガシー形式サポートモジュール
 //!
-//! Vibrato is a fast implementation of tokenization (or morphological analysis)
-//! based on the viterbi algorithm.
+//! このモジュールは、Vibratoのレガシー辞書形式をサポートするための機能を提供します。
+//! Viterbiアルゴリズムに基づく高速なトークン化（形態素解析）を実装しています。
 //!
-//! ## Examples
+//! # 概要
+//!
+//! レガシーフォーマットは、MeCabなどの従来の形態素解析器で使用されていた
+//! 辞書形式との互換性を保つために提供されています。このモジュールを使用することで、
+//! 既存の辞書データをVibratoで利用することができます。
+//!
+//! # 使用例
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,14 +17,14 @@
 //!
 //! use vibrato::{SystemDictionaryBuilder, Tokenizer};
 //!
-//! // Loads a set of raw dictionary files
+//! // 生の辞書ファイルセットを読み込む
 //! let dict = SystemDictionaryBuilder::from_readers(
 //!     File::open("src/tests/resources/lex.csv")?,
 //!     File::open("src/tests/resources/matrix.def")?,
 //!     File::open("src/tests/resources/char.def")?,
 //!     File::open("src/tests/resources/unk.def")?,
 //! )?;
-//! // or loads a compiled dictionary
+//! // または、コンパイル済み辞書を読み込む
 //! // let reader = File::open("path/to/system.dic")?;
 //! // let dict = Dictionary::read(reader)?;
 //!

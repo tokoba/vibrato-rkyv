@@ -1,13 +1,19 @@
+//! トライ構造による高速文字列検索
+//!
+//! このモジュールは、トライ構造を使用した高速な文字列検索機能を提供します。
+
 use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::errors::{Result, VibratoError};
 
+/// ダブル配列トライ
 #[derive(Archive, Serialize, Deserialize)]
 pub struct Trie {
     da: crawdad_rkyv::Trie,
 }
 
 impl Trie {
+    /// レコードからトライを構築します。
     pub fn from_records<K>(records: &[(K, u32)]) -> Result<Self>
     where
         K: AsRef<str>,
@@ -29,6 +35,7 @@ impl Trie {
     }
 }
 
+/// トライマッチング結果
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub struct TrieMatch {
     pub value: u32,
@@ -36,6 +43,7 @@ pub struct TrieMatch {
 }
 
 impl TrieMatch {
+    /// 新しいマッチング結果を作成します。
     #[inline(always)]
     pub const fn new(value: u32, end_char: usize) -> Self {
         Self { value, end_char }
@@ -43,6 +51,7 @@ impl TrieMatch {
 }
 
 impl ArchivedTrie {
+    /// 共通接頭辞検索のイテレータを取得します（アーカイブ版）。
     #[inline(always)]
     pub fn common_prefix_iterator<'a>(
         &'a self,

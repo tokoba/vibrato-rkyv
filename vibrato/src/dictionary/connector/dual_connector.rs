@@ -1,3 +1,8 @@
+//! デュアルコネクターの実装
+//!
+//! このモジュールは、行列コネクターと生コネクターを組み合わせた
+//! デュアルコネクターを提供します。
+
 use std::io::Read;
 
 use hashbrown::{HashMap, HashSet};
@@ -12,6 +17,7 @@ use crate::dictionary::mapper::ConnIdMapper;
 use crate::errors::Result;
 use crate::num::U31;
 
+/// 行列コネクターと生コネクターを組み合わせたデュアルコネクター
 #[derive(Archive, Serialize, Deserialize)]
 pub struct DualConnector {
     matrix_connector: MatrixConnector,
@@ -23,8 +29,8 @@ pub struct DualConnector {
 }
 
 impl DualConnector {
-    /// Removes feature templates so that the matrix size is smaller using greedy search
-    /// and returns a set of rest IDs.
+    /// 貪欲探索を使用して行列サイズが小さくなるように特徴テンプレートを削除し、
+    /// 残りのIDのセットを返します。
     pub fn remove_feature_templates_greedy(
         raw_feat_template_size: usize,
         right_feat_ids_tmp: &[Vec<U31>],
@@ -142,7 +148,21 @@ impl DualConnector {
         (right_feat_ids, left_feat_ids)
     }
 
-    /// Creates a new instance from `bigram.right`, `bigram.left`, and `bigram.cost`.
+    /// `bigram.right`、`bigram.left`、`bigram.cost` から新しいインスタンスを作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `right_rdr` - `bigram.right` ファイルのリーダー
+    /// * `left_rdr` - `bigram.left` ファイルのリーダー
+    /// * `cost_rdr` - `bigram.cost` ファイルのリーダー
+    ///
+    /// # 戻り値
+    ///
+    /// 成功時は `Ok(DualConnector)` を返します。
+    ///
+    /// # エラー
+    ///
+    /// ファイルフォーマットが不正な場合にエラーを返します。
     pub fn from_readers<R, L, C>(right_rdr: R, left_rdr: L, cost_rdr: C) -> Result<Self>
     where
         R: Read,

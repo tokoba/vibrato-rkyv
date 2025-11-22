@@ -1,3 +1,9 @@
+//! レガシー辞書変換モジュール
+//!
+//! このモジュールは、古い形式(bincode)のVibrato辞書を新しい形式(rkyv)に変換する機能を提供します。
+//! .dic、.dic.zst、.tar.gz、.tar.xz形式の辞書ファイルに対応し、
+//! 自動的に解凍・展開してrkyv形式の辞書に変換します。
+
 use std::path::{Path, PathBuf};
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
@@ -10,6 +16,9 @@ use xz2::bufread::XzDecoder;
 use crate::{build::BuildError, dictgen::DictgenError, train::TrainError};
 
 
+/// レガシー辞書変換コマンドの引数
+///
+/// 変換元のbincode形式辞書ファイルと出力先ディレクトリを指定します。
 #[derive(Parser, Debug)]
 #[clap(
     name = "transmute-lagacy",
@@ -25,30 +34,57 @@ pub struct Args {
     out_dir: PathBuf,
 }
 
+/// レガシー辞書変換処理中に発生する可能性のあるエラー
 #[derive(Debug, thiserror::Error)]
 pub enum TransmuteLegacyError {
+    /// 訓練エラー
     #[error(transparent)]
     Train(#[from] TrainError),
+    /// 辞書生成エラー
     #[error(transparent)]
     Dictgen(#[from] DictgenError),
+    /// ビルドエラー
     #[error(transparent)]
     Build(#[from] BuildError),
+    /// 入出力エラー
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// Vibrato-rkyv ライブラリエラー
     #[error(transparent)]
     VibratoRkyv(#[from] vibrato_rkyv::errors::VibratoError),
 
+    /// サポートされていないファイル拡張子
+    ///
+    /// .dic、.dic.zst、.tar.gz、.tar.xz のみがサポートされています。
     #[error("Unsupported file extension: {0:?}. Only '.dic', '.dic.zst', 'tar.xz', 'tar.gz' are supported.")]
     UnsupportedExtension(Option<String>),
 
+    /// tarアーカイブ内に辞書ファイルが見つからない
     #[error("Dictionary file not found in the tar archive")]
     DictNotFoundInTar,
 
+    /// 出力パスがディレクトリではない
     #[error("Output path is not a directory: {0}")]
     PathNotDirectory(PathBuf),
 }
 
 
+/// レガシー辞書変換コマンドを実行する
+///
+/// bincode形式の辞書ファイルを読み込み、rkyv形式に変換して出力します。
+/// 非圧縮版とzstd圧縮版の両方を生成します。
+///
+/// # 引数
+///
+/// * `args` - 変換コマンドの引数
+///
+/// # 戻り値
+///
+/// 成功時は`Ok(())`。変換された辞書は`args.out_dir`に出力されます。
+///
+/// # エラー
+///
+/// ファイルの読み書きや変換処理に失敗した場合、`TransmuteLegacyError`を返します。
 pub fn run(args: Args) -> Result<(), TransmuteLegacyError> {
     let bincode_path = args.input;
     if !args.out_dir.exists() {
@@ -88,6 +124,22 @@ pub fn run(args: Args) -> Result<(), TransmuteLegacyError> {
     Ok(())
 }
 
+/// ファイルパスから適切なリーダを取得する
+///
+/// ファイルの拡張子を判定し、必要に応じて解凍・展開を行います。
+/// .zst、.tar.gz、.tar.xz形式に対応しています。
+///
+/// # 引数
+///
+/// * `path` - 辞書ファイルのパス
+///
+/// # 戻り値
+///
+/// 辞書データを読み込むためのリーダ
+///
+/// # エラー
+///
+/// ファイルのオープンや解凍に失敗した場合、`TransmuteLegacyError`を返します。
 fn get_reader(path: &Path) -> Result<Box<dyn Read>, TransmuteLegacyError> {
     let file = File::open(path)?;
 

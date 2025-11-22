@@ -1,10 +1,16 @@
+//! コーパスデータ構造のモジュール。
+//!
+//! このモジュールは、学習用コーパスの読み込みと管理に必要なデータ構造を提供します。
+
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::{Deref, DerefMut};
 
 use crate::errors::{Result, VibratoError};
 use crate::sentence::Sentence;
 
-/// Representation of a pair of a surface and features.
+/// 表層形と素性のペアの表現。
+///
+/// 学習データの単語を表します。
 pub struct Word {
     surface: String,
 
@@ -14,6 +20,16 @@ pub struct Word {
 }
 
 impl Word {
+    /// 新しい単語を作成します。
+    ///
+    /// # 引数
+    ///
+    /// * `surface` - 表層形
+    /// * `feature` - 素性文字列
+    ///
+    /// # 戻り値
+    ///
+    /// 作成された単語
     pub(crate) fn new(surface: &str, feature: &str) -> Self {
         Self {
             surface: surface.to_string(),
@@ -21,27 +37,50 @@ impl Word {
         }
     }
 
-    /// Returns a surface string.
+    /// 表層形の文字列を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// 表層形
     pub fn surface(&self) -> &str {
         &self.surface
     }
 
-    /// Returns a concatenated feature string.
+    /// 連結された素性文字列を返します。
+    ///
+    /// # 戻り値
+    ///
+    /// 素性文字列
     pub fn feature(&self) -> &str {
         &self.feature
     }
 }
 
-/// Representation of a sentence.
+/// 文の表現。
+///
+/// 学習データの1つの例文を表します。
 pub struct Example {
-    /// Concatenation of `tokens`.
+    /// トークンの連結。
     pub(crate) sentence: Sentence,
 
+    /// トークンのリスト。
     pub(crate) tokens: Vec<Word>,
 }
 
 impl Example {
-    /// Write an example to a given sink.
+    /// 例文を指定されたシンクに書き込みます。
+    ///
+    /// # 引数
+    ///
+    /// * `wtr` - 書き込み先
+    ///
+    /// # 戻り値
+    ///
+    /// 書き込み成功時は `Ok(())`
+    ///
+    /// # エラー
+    ///
+    /// 書き込みに失敗した場合、I/Oエラーが返されます。
     pub fn write<W>(&self, wtr: W) -> Result<()>
     where
         W: Write,
@@ -54,27 +93,41 @@ impl Example {
         Ok(())
     }
 
-    /// Returns a slice of tokens.
+    /// トークンのスライスを返します。
+    ///
+    /// # 戻り値
+    ///
+    /// トークンのスライス
     pub fn tokens(&self) -> &[Word] {
         &self.tokens
     }
 }
 
-/// Representation of a corpus.
+/// コーパスの表現。
+///
+/// 学習データの例文集合を表します。
 pub struct Corpus {
+    /// 例文のリスト。
     pub(crate) examples: Vec<Example>,
 }
 
 impl Corpus {
-    /// Loads a corpus from the given sink.
+    /// 指定されたシンクからコーパスを読み込みます。
     ///
-    /// # Arguments
+    /// コーパスファイルは、各行が「表層形\t素性」の形式で、
+    /// 文の終わりに「EOS」が含まれる形式を想定しています。
     ///
-    /// * `rdr` - A reader of the corpus.
+    /// # 引数
     ///
-    /// # Errors
+    /// * `rdr` - コーパスのリーダー
     ///
-    /// [`VibratoError`] is returned when an input format is invalid.
+    /// # 戻り値
+    ///
+    /// 読み込まれたコーパス
+    ///
+    /// # エラー
+    ///
+    /// 入力形式が不正な場合、[`VibratoError`] が返されます。
     pub fn from_reader<R>(rdr: R) -> Result<Self>
     where
         R: Read,

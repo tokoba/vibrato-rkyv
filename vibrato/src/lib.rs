@@ -1,9 +1,22 @@
 //! # Vibrato-rkyv
 //!
-//! Vibrato is a fast implementation of tokenization (or morphological analysis)
-//! based on the viterbi algorithm.
+//! Vibratoは、ビタビアルゴリズムに基づく高速な形態素解析（トークン化）の実装です。
 //!
-//! ## Examples
+//! ## 概要
+//!
+//! このライブラリは、日本語テキストの形態素解析を行うための高速なトークナイザーを提供します。
+//! rkyvシリアライゼーションフォーマットを使用することで、辞書の読み込みと初期化を高速化し、
+//! ゼロコピーでのデータアクセスを実現しています。
+//!
+//! ## 主な機能
+//!
+//! - **高速な形態素解析**: ビタビアルゴリズムを用いた効率的なトークン化
+//! - **ゼロコピーデシリアライゼーション**: rkyvを使用した高速な辞書読み込み
+//! - **柔軟な辞書構築**: MeCab形式の辞書ファイルからのビルド
+//! - **N-best解析**: 複数の解析候補の生成（実験的機能）
+//! - **学習機能**: 構造化パーセプトロンによるモデル学習（trainフィーチャー有効時）
+//!
+//! ## 使用例
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,22 +62,45 @@
 #[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64")))]
 compile_error!("`target_pointer_width` must be 32 or 64");
 
+/// 共通の型定義とユーティリティ
 pub mod common;
+
+/// 辞書データ構造とビルダー
 pub mod dictionary;
+
+/// エラー型の定義
 pub mod errors;
+
+/// 数値型のユーティリティ
 mod num;
+
+/// 文の内部表現
 mod sentence;
+
+/// トークン型の定義
 pub mod token;
+
+/// トークナイザーの実装
 pub mod tokenizer;
+
+/// 内部ユーティリティ関数
 mod utils;
 
+/// レガシーフォーマットのサポート
 #[cfg(feature = "legacy")]
 mod legacy;
 
+/// MeCab形式ファイルの読み書き
+///
+/// `train`フィーチャーが有効な場合のみ利用可能です。
 #[cfg(feature = "train")]
 #[cfg_attr(docsrs, doc(cfg(feature = "train")))]
 pub mod mecab;
 
+/// モデル学習機能
+///
+/// `train`フィーチャーが有効な場合のみ利用可能です。
+/// 構造化パーセプトロンを用いたモデルパラメータの学習を提供します。
 #[cfg(feature = "train")]
 #[cfg_attr(docsrs, doc(cfg(feature = "train")))]
 pub mod trainer;
@@ -74,8 +110,9 @@ mod test_utils;
 #[cfg(test)]
 mod tests;
 
-pub use dictionary::{Dictionary, SystemDictionaryBuilder, LoadMode, CacheStrategy};
+// Re-exports
+pub use dictionary::{CacheStrategy, Dictionary, LoadMode, SystemDictionaryBuilder};
 pub use tokenizer::Tokenizer;
 
-/// Version number of this library.
+/// このライブラリのバージョン番号
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
