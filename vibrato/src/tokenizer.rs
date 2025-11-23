@@ -11,10 +11,9 @@
 //! # 例
 //!
 //! ```no_run
-//! use vibrato::Tokenizer;
-//! use vibrato::Dictionary;
+//! use vibrato_rkyv::{Tokenizer, Dictionary, LoadMode};
 //!
-//! let dict = Dictionary::open("path/to/dict")?;
+//! let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
 //! let tokenizer = Tokenizer::new(dict);
 //! let mut worker = tokenizer.new_worker();
 //!
@@ -55,9 +54,9 @@ use crate::tokenizer::worker::Worker;
 /// # 例
 ///
 /// ```no_run
-/// use vibrato::{Dictionary, Tokenizer};
+/// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
 ///
-/// let dict = Dictionary::open("path/to/dict")?;
+/// let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
 /// let tokenizer = Tokenizer::new(dict);
 /// let mut worker = tokenizer.new_worker();
 ///
@@ -95,9 +94,9 @@ impl Tokenizer {
     /// # 例
     ///
     /// ```no_run
-    /// use vibrato::{Dictionary, Tokenizer};
+    /// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
     ///
-    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
     /// let tokenizer = Tokenizer::new(dict);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
@@ -143,9 +142,9 @@ impl Tokenizer {
     ///
     /// ```no_run
     /// use std::sync::Arc;
-    /// use vibrato::{Dictionary, Tokenizer};
+    /// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
     ///
-    /// let dict = Arc::new(Dictionary::open("path/to/dict")?);
+    /// let dict = Arc::new(Dictionary::from_path("path/to/dict", LoadMode::Validate)?);
     /// let tokenizer1 = Tokenizer::from_shared_dictionary(dict.clone());
     /// let tokenizer2 = Tokenizer::from_shared_dictionary(dict.clone());
     /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -178,9 +177,9 @@ impl Tokenizer {
     /// # 例
     ///
     /// ```no_run
-    /// use vibrato::{Dictionary, Tokenizer};
+    /// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
     ///
-    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
     /// let tokenizer = Tokenizer::new(dict).ignore_space(true)?;
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
@@ -223,9 +222,9 @@ impl Tokenizer {
     /// # 例
     ///
     /// ```no_run
-    /// use vibrato::{Dictionary, Tokenizer};
+    /// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
     ///
-    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
     /// // MeCab互換モード
     /// let tokenizer = Tokenizer::new(dict).max_grouping_len(24);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -264,9 +263,9 @@ impl Tokenizer {
     /// # 例
     ///
     /// ```no_run
-    /// use vibrato::{Dictionary, Tokenizer};
+    /// use vibrato_rkyv::{Dictionary, Tokenizer, LoadMode};
     ///
-    /// let dict = Dictionary::open("path/to/dict")?;
+    /// let dict = Dictionary::from_path("path/to/dict", LoadMode::Validate)?;
     /// let tokenizer = Tokenizer::new(dict);
     /// let mut worker = tokenizer.new_worker();
     ///

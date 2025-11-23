@@ -42,7 +42,7 @@ impl U31 {
     /// # 例
     ///
     /// ```
-    /// # use vibrato::num::U31;
+    /// # use vibrato_rkyv::num::U31;
     /// assert!(U31::new(100).is_some());
     /// assert!(U31::new(0x7fff_ffff).is_some());
     /// assert!(U31::new(0x8000_0000).is_none());

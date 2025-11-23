@@ -107,7 +107,7 @@ where
 /// # 例
 ///
 /// ```
-/// # use vibrato::utils::parse_csv_row;
+/// # use vibrato_rkyv::utils::parse_csv_row;
 /// let fields = parse_csv_row("名詞,トスカーナ");
 /// assert_eq!(fields, vec!["名詞", "トスカーナ"]);
 ///

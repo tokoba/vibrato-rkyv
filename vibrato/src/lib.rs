@@ -72,7 +72,7 @@ pub mod dictionary;
 pub mod errors;
 
 /// 数値型のユーティリティ
-mod num;
+pub mod num;
 
 /// 文の内部表現
 mod sentence;
@@ -84,7 +84,7 @@ pub mod token;
 pub mod tokenizer;
 
 /// 内部ユーティリティ関数
-mod utils;
+pub mod utils;
 
 /// レガシーフォーマットのサポート
 #[cfg(feature = "legacy")]
