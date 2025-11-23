@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use tempfile::{tempdir, TempDir};
 
@@ -68,6 +68,7 @@ impl GlobalTestResources {
 }
 
 static GLOBAL_RESOURCES: OnceLock<GlobalTestResources> = OnceLock::new();
+static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
 fn global_resources() -> &'static GlobalTestResources {
     GLOBAL_RESOURCES.get_or_init(GlobalTestResources::new)
@@ -128,6 +129,7 @@ impl Default for TestEnv {
 /// zstd圧縮されたrkyv辞書からローカルキャッシュが作成されることを確認
 #[test]
 fn test_from_zstd_rkyv_creates_local_cache() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let env = TestEnv::new();
     env.clear_vibrato_caches();
 
@@ -144,6 +146,7 @@ fn test_from_zstd_rkyv_creates_local_cache() {
 #[test]
 #[cfg(feature = "legacy")]
 fn test_from_zstd_legacy_converts_and_caches_as_rkyv() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let env = TestEnv::new();
     env.clear_vibrato_caches();
 
@@ -162,6 +165,7 @@ fn test_from_zstd_legacy_converts_and_caches_as_rkyv() {
 /// TrustCacheモードでの辞書読み込みとキャッシュ動作のテスト
 #[test]
 fn test_from_path_trustcache_flow() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let env = TestEnv::new();
     env.clear_vibrato_caches();
 
@@ -185,6 +189,7 @@ fn test_from_path_trustcache_flow() {
 /// Validateモードでの辞書読み込みテスト
 #[test]
 fn test_from_path_validate_mode() {
+    let _guard = TEST_MUTEX.lock().unwrap();
     let env = TestEnv::new();
     env.clear_vibrato_caches();
 
